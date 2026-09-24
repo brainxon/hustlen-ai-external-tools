@@ -197,3 +197,93 @@ describe('Workable-style modal form (igwork.gr)', () => {
     expect((document.querySelector('input[value="y"]') as HTMLInputElement).checked).toBe(true);
   });
 });
+
+describe('experience & education sections', () => {
+  const twoJobs = () => {
+    const c = ctx();
+    c.profile.cv!.experience = [
+      { job_title: 'Senior Python Developer', company: 'Acme GmbH', location: 'Berlin', dates: '03/2019 - Present', start: '03/2019', end: null, is_current: true, description: 'Built APIs\n- Cut latency 40%' },
+      { job_title: 'Developer', company: 'Globex', location: 'Madrid', dates: '01/2016 - 02/2019', start: '01/2016', end: '02/2019', is_current: false, description: 'Web apps' },
+    ];
+    return c;
+  };
+
+  it('fills repeated experience blocks in order, dates per control type, current-role checkbox', async () => {
+    mount(`
+      <h2>Work Experience</h2>
+      <div class="block">
+        <label for="t1">Job title</label><input id="t1"><label for="c1">Company</label><input id="c1">
+        <label for="s1">From</label><input id="s1" type="month"><label for="e1">To</label><input id="e1" type="month">
+        <label><input type="checkbox" id="cur1"> I currently work here</label>
+        <label for="d1">Description</label><textarea id="d1"></textarea>
+      </div>
+      <div class="block">
+        <label for="t2">Job title</label><input id="t2"><label for="c2">Company</label><input id="c2">
+        <label for="s2">From</label><input id="s2" placeholder="MM/YYYY"><label for="e2">To</label><input id="e2" placeholder="MM/YYYY">
+        <label><input type="checkbox" id="cur2"> I currently work here</label>
+      </div>`);
+    await runAutofill(twoJobs(), GENERIC_ADAPTER);
+    expect([value('#t1'), value('#c1'), value('#s1'), value('#e1')]).toEqual(['Senior Python Developer', 'Acme GmbH', '2019-03', '']);
+    expect((document.querySelector('#cur1') as HTMLInputElement).checked).toBe(true);
+    expect(value('#d1')).toContain('Cut latency 40%');
+    expect([value('#t2'), value('#c2'), value('#s2'), value('#e2')]).toEqual(['Developer', 'Globex', '01/2016', '02/2019']);
+    expect((document.querySelector('#cur2') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('fills education and month/year selects in any language', async () => {
+    mount(`
+      <fieldset><legend>Ausbildung</legend>
+        <label for="u">Hochschule</label><input id="u"><label for="g">Abschluss</label><input id="g">
+        <label for="f">Studienfach</label><input id="f">
+        <label for="em">Ende Monat</label><select id="em"><option value="">--</option><option>Jan</option><option>Feb</option></select>
+        <label for="ey">Ende Jahr</label><select id="ey"><option value="">--</option><option>2015</option><option>2016</option></select>
+      </fieldset>`);
+    const c = ctx();
+    c.profile.cv!.education = [{ degree: 'BSc Computer Science', institution: 'TU Berlin', location: '', start: '10/2012', end: '02/2016', field_of_study: 'CS' }];
+    await runAutofill(c, GENERIC_ADAPTER);
+    expect([value('#u'), value('#g'), value('#f'), value('#em'), value('#ey')]).toEqual(['TU Berlin', 'BSc Computer Science', 'CS', 'Feb', '2016']);
+  });
+
+  it('prefers the tailored CV and outlines unreviewed tailored text for review', async () => {
+    mount('<h3>Experience</h3><label for="t">Title</label><input id="t"><label for="d">Responsibilities</label><textarea id="d"></textarea>');
+    const tailored = { ...ctx().profile.cv!, experience: [{ job_title: 'Backend Engineer', company: 'Acme', location: '', dates: '', start: null, end: null, is_current: true, description: 'Tailored wording for Globex' }] };
+    const report = await runAutofill(twoJobs(), GENERIC_ADAPTER, document, { getTailoredCv: async () => ({ cv: tailored, reviewed: false }) });
+    expect(value('#t')).toBe('Backend Engineer');
+    expect(value('#d')).toBe('Tailored wording for Globex');
+    expect((document.querySelector('#d') as HTMLElement).dataset.hustlenFill).toBe('review');
+    expect(report.needsReview.length).toBeGreaterThan(0);
+  });
+
+  it('clicks the section "Add another" button when the CV has more entries than blocks', async () => {
+    mount(`<section><h2>Work experience</h2><label for="t1">Job title</label><input id="t1"><label for="c1">Company</label><input id="c1">
+      <button type="button" id="add">+ Add another work experience</button></section>
+      <section><h2>Education</h2><button type="button" id="addEdu">Add education</button></section>`);
+    const addClick = vi.fn();
+    const eduClick = vi.fn();
+    document.querySelector('#add')!.addEventListener('click', addClick);
+    document.querySelector('#addEdu')!.addEventListener('click', eduClick);
+    const report = await runAutofill(twoJobs(), GENERIC_ADAPTER);
+    expect(addClick).toHaveBeenCalledTimes(1); // 2 jobs, 1 block -> open exactly one more
+    expect(eduClick).not.toHaveBeenCalled(); // nothing filled in education -> don't add blocks there
+    expect(report.sectionsAdded).toBe(1);
+  });
+
+  it('never adds blocks beyond the CV entries', async () => {
+    mount(`<h2>Experience</h2><label for="t1">Job title</label><input id="t1"><label for="t2">Job title</label><input id="t2">
+      <button type="button" id="add">Add experience</button>`);
+    const addClick = vi.fn();
+    document.querySelector('#add')!.addEventListener('click', addClick);
+    await runAutofill(twoJobs(), GENERIC_ADAPTER);
+    expect(addClick).not.toHaveBeenCalled();
+    expect([value('#t1'), value('#t2')]).toEqual(['Senior Python Developer', 'Developer']);
+  });
+});
+
+describe('section context boundaries', () => {
+  it('ignores job-description headings outside the form', async () => {
+    mount(`<article><h2>Experience you will bring</h2><p>5+ years</p></article>
+      <form><label for="loc">Location</label><input id="loc"></form>`);
+    await runAutofill(ctx(), GENERIC_ADAPTER);
+    expect(value('#loc')).toBe('Berlin, Berlin, Germany'); // candidate location from profile, not a job entry
+  });
+});

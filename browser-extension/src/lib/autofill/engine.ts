@@ -5,6 +5,8 @@ import type { PlatformAdapter } from './adapters';
 import { discoverFields, hasValue, normalize, type FieldDescriptor } from './fields';
 import { fillCheckboxes, fillChoice, fillCombobox, fillSelect, fillText, highlight } from './fill';
 import { classify, type FieldKey } from './matcher';
+import { assignSectionSlots, findAddButton, MAX_SECTION_ENTRIES, sectionValue, type SectionKind } from './sections';
+import type { FlatCv } from '../types';
 import { resolveValue, type ResolvedValue } from './values';
 
 /**
@@ -80,9 +82,16 @@ export interface CoverLetterSource {
   reviewed: boolean;
 }
 
+export interface TailoredCvSource {
+  cv: FlatCv;
+  reviewed: boolean;
+}
+
 export interface AutofillOptions {
   /** Called lazily, at most once, only when a cover-letter TEXT field is present. */
   getCoverLetter?: () => Promise<CoverLetterSource | null>;
+  /** The job's tailored CV, called lazily only when experience/education sections exist. */
+  getTailoredCv?: () => Promise<TailoredCvSource | null>;
 }
 
 const TEXT_KINDS = new Set(['textarea', 'text']);
@@ -100,12 +109,52 @@ export async function runAutofill(
 
   let coverLetter: Promise<CoverLetterSource | null> | null = null;
 
+  // Work-experience / education sections: entry by entry, from the job's
+  // tailored CV when there is one, else the selected Master CV.
+  const slots = assignSectionSlots(fields);
+  let sectionCv: { cv: FlatCv; tailored: boolean; reviewed: boolean } | null = null;
+  if (slots.size) {
+    const tailored = options.getTailoredCv ? await options.getTailoredCv().catch(() => null) : null;
+    sectionCv = tailored?.cv?.experience?.length || tailored?.cv?.education?.length
+      ? { cv: tailored.cv, tailored: true, reviewed: tailored.reviewed }
+      : ctx.profile.cv
+        ? { cv: ctx.profile.cv, tailored: false, reviewed: true }
+        : null;
+  }
+  const sectionFilled = new Set<SectionKind>();
+  const sectionBlocks: Record<SectionKind, number> = { experience: 0, education: 0 };
+
   for (const field of fields) {
     byId.set(field.id, field);
+    const slot = slots.get(field.id);
+    if (slot) sectionBlocks[slot.kind] = Math.max(sectionBlocks[slot.kind], slot.index + 1);
     if (hasValue(field)) {
       report.skipped++;
       continue;
     }
+
+    if (slot) {
+      const sv = sectionCv ? sectionValue(slot, field, sectionCv.cv) : null;
+      if (sv) {
+        let ok: boolean;
+        if (sv.check !== undefined) {
+          const box = field.element as HTMLInputElement;
+          if (sv.check && !box.checked) box.click();
+          ok = sv.check;
+        } else {
+          ok = await write(field, { value: sv.value, source: 'cv' });
+        }
+        if (ok) {
+          report.filled++;
+          sectionFilled.add(slot.kind);
+          const needsReview = sectionCv!.tailored && !sectionCv!.reviewed && (slot.role === 'description' || slot.role === 'title');
+          highlight(field, needsReview ? 'review' : 'filled');
+          if (needsReview) report.needsReview.push(field.label || slot.role);
+        }
+      }
+      continue; // section fields never go through single-field rules or the AI step
+    }
+
     const cls = classify(field, adapter.hint?.(field));
 
     // Cover letter asked as a text field (some forms do, instead of an upload):
@@ -151,6 +200,22 @@ export async function runAutofill(
         options: field.options.slice(0, 100),
         max_length: field.maxLength,
       });
+    }
+  }
+
+  // More CV entries than blocks: open ONE more block per run via the form's
+  // own "Add another" button; the sticky observer fills it and repeats, up
+  // to the CV's entry count (max MAX_SECTION_ENTRIES). Never submits.
+  if (sectionCv) {
+    for (const kind of ['experience', 'education'] as const) {
+      const entries = Math.min(kind === 'experience' ? sectionCv.cv.experience.length : sectionCv.cv.education.length, MAX_SECTION_ENTRIES);
+      if (sectionFilled.has(kind) && entries > sectionBlocks[kind]) {
+        const add = findAddButton(doc, kind);
+        if (add) {
+          add.click();
+          report.sectionsAdded = (report.sectionsAdded ?? 0) + 1;
+        }
+      }
     }
   }
 

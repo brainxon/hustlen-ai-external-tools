@@ -5,7 +5,7 @@ import { applyAnswers, countFormFields, runAutofill } from '@/lib/autofill/engin
 import { extractJobDeep } from '@/lib/extract/job';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
 import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
-import type { ExtensionProfile, ScreeningAnswer } from '@/lib/types';
+import type { ExtensionProfile, FlatCv, ScreeningAnswer } from '@/lib/types';
 import { mountInPageButton } from './button';
 
 /**
@@ -34,6 +34,8 @@ export default defineContentScript({
     }
 
     let sticky: MutationObserver | null = null;
+    // One fetch per page: sticky re-runs (new "Add another" blocks) reuse it.
+    let tailoredCv: Promise<{ cv: FlatCv; reviewed: boolean } | null> | null = null;
     let running = false;
 
     async function autofill(useAi?: boolean): Promise<AutofillReport | { error: string }> {
@@ -47,6 +49,12 @@ export default defineContentScript({
           return { error: 'No application form on this page yet. Open the form (e.g. click "Apply") and try again.' };
         }
         const report = await runAutofill({ profile, answers }, a, document, {
+          getTailoredCv: () => (tailoredCv ??= (async () => {
+            const job = await extractJobDeep(document, new URL(location.href), a);
+            if (!job) return null;
+            const res = await send<{ cv: FlatCv; reviewed: boolean } | null>({ type: 'app:tailoredCv', url: job.url });
+            return res.ok ? res.data : null;
+          })()),
           // Only fetched when the form asks for the cover letter as TEXT (not an upload).
           getCoverLetter: async () => {
             const job = await extractJobDeep(document, new URL(location.href), a);
@@ -69,6 +77,8 @@ export default defineContentScript({
           }
         }
         startSticky();
+        // A new "Add another" block was opened: fill it on the next pass.
+        if (report.sectionsAdded) setTimeout(() => void autofill(), 500);
         return report;
       } finally {
         running = false;

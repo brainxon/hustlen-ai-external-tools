@@ -14,6 +14,7 @@ export type BackgroundRequest =
   | { type: 'app:markSubmitted'; applicationId: number }
   | { type: 'ai:answer'; questions: ScreeningQuestion[]; job?: Partial<ExtractedJob>; applicationId?: number | null }
   | { type: 'app:coverLetterText'; url: string }
+  | { type: 'app:tailoredCv'; url: string }
   | { type: 'tab:scan'; tabId: number }
   | { type: 'tab:autofill'; tabId: number; useAi?: boolean };
 
@@ -42,6 +43,8 @@ export interface AutofillReport {
   durationMs: number;
   /** A cover-letter text field was found: filled from the tailored letter, or missing (tailor first). */
   coverLetter?: 'filled' | 'missing';
+  /** "Add another" blocks opened for extra experience/education entries. */
+  sectionsAdded?: number;
 }
 
 export interface AutofillContext {

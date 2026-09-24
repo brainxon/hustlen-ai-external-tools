@@ -104,6 +104,10 @@ export class HustlenApi {
     return { blob: await res.blob(), filename };
   }
 
+  tailoredCv(applicationId: number): Promise<{ cv: import('./types').FlatCv; review_confirmed: boolean }> {
+    return this.request(`/extension/applications/${applicationId}/documents/cv/flat`);
+  }
+
   coverLetterText(applicationId: number): Promise<{ text: string; review_confirmed: boolean }> {
     return this.request(`/extension/applications/${applicationId}/documents/cover_letter/text`);
   }

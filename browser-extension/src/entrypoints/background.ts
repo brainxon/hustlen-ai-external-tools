@@ -99,6 +99,12 @@ async function handle(msg: BackgroundRequest): Promise<unknown> {
       const cl = await api.coverLetterText(found.application_id);
       return { text: cl.text, reviewed: cl.review_confirmed };
     }
+    case 'app:tailoredCv': {
+      const found = await api.lookupApplication(msg.url);
+      if (!found.found || !found.application_id || !found.cv_available) return null;
+      const t = await api.tailoredCv(found.application_id);
+      return { cv: t.cv, reviewed: t.review_confirmed };
+    }
     case 'app:markSubmitted':
       return api.setStatus(msg.applicationId, 'Submitted');
     case 'ai:answer': {
