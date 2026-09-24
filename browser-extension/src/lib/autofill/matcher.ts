@@ -52,7 +52,7 @@ const AUTOCOMPLETE: Record<string, FieldKey> = {
 // Order matters: the first matching rule wins, so specific rules come
 // before generic ones (e.g. "last name" before "name", "LinkedIn" before
 // "website", EEO questions before anything that might contain "status").
-const RULES: [FieldKey, RegExp][] = [
+const BASE_RULES: [FieldKey, RegExp][] = [
   // Stem rules (relocat…, sponsor…, datenschutz…) have no trailing \b so they
   // match every inflection and German compound.
   ['consent', /\b(i (agree|consent|accept|acknowledge|certify)|privacy (policy|notice)|terms (and|&) conditions|datenschutz|einwillig|acepto|consentimiento|política de privacidad)/i],
@@ -102,6 +102,61 @@ const RULES: [FieldKey, RegExp][] = [
   ['summary', /\b(summary|about (you|yourself)|profile summary|kurzprofil|resumen profesional|sobre ti)\b/i],
 ];
 
+
+/**
+ * Unicode word-boundary builder: JS `\b` is ASCII-only, so it never matches
+ * before/after accented letters ("État", "Éducation", "città"). `stem`
+ * leaves the end open for inflections and compounds.
+ */
+export function w(alternatives: string, stem = false): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})${stem ? '' : '(?![\\p{L}\\p{N}])'}`, 'iu');
+}
+
+// French / Portuguese / Italian (plus a few es/de gaps), merged into the
+// same key so priority order stays exactly as in BASE_RULES.
+const EXTRA_RULES: Partial<Record<FieldKey, RegExp>> = {
+  consent: w("j['’]accepte|consentement|politique de confidentialit|protection des donn|aceito|concordo|consentimento|pol[ií]tica de privacidade|prote[cç][aã]o de dados|accetto|acconsento|consenso|informativa (sulla )?privacy|trattamento dei dati", true),
+  resume: w('(t[ée]l[ée]charger|joindre|importer|anexar|carregar|enviar|carica|allega)\\s.*(cv|curr[ií]cul)', true),
+  cover_letter: w('lettre de motivation|carta de apresenta[cç][aã]o|carta de motiva[cç][aã]o|lettera (di presentazione|motivazionale)'),
+  gender: w('genre|sexe|civilit[ée]|g[êe]nero|genere|sesso'),
+  ethnicity: w('origine ethnique|ra[cç]a|origine etnica|etnia'),
+  veteran: w('ancien combattant|veterano'),
+  disability: w('handicap|defici[êe]ncia|disabilit[àa]|invalidit[àa]', true),
+  sponsorship: w('parrainage|patroc[ií]nio|sponsorizzazione|visto|visa', true),
+  work_authorization: w("autoris[ée]e? [àa] travailler|permis de travail|droit de travailler|autoriza[cç][aã]o de trabalho|autorizad[oa] a trabalhar|permiss[aã]o de trabalho|permesso di (lavoro|soggiorno)|autorizzat[oa] a lavorare"),
+  relocate: w('d[ée]m[ée]nag|relocalis|mobilit[ée] g[ée]ographique|mudar-se|realoca|mudan[cç]a de cidade|trasferir|trasferiment|disponibilit[àa] a trasferirsi', true),
+  remote: w('t[ée]l[ée]travail|[àa] distance|sur site|hybride|teletrabalho|h[ií]brido|remoto|da remoto|smart working|in sede|ibrido'),
+  notice_period: w('pr[ée]avis|aviso pr[ée]vio|preavviso'),
+  start_date: w("date de (d[ée]but|disponibilit[ée])|data de in[ií]cio|disponibilidade|data di inizio|disponibilit[àa]"),
+  salary: w('salaire|r[ée]mun[ée]ration|pr[ée]tentions? salariales?|sal[áa]rio|pretens[aã]o salarial|remunera[cç][aã]o|stipendio|retribuzione|ral|aspettative economiche', true),
+  years_experience: w("ann[ée]es d['’]exp[ée]rience|anos de experi[êe]ncia|anni di esperienza"),
+  how_did_you_hear: w('comment avez-vous (connu|entendu)|como (soube|conheceu)|onde encontrou|come (hai saputo|ci hai conosciuto)|dove hai trovato', true),
+  website: w('site (web|internet)|portf[óo]lio|sito web|site pessoal'),
+  email: w('courriel|adresse e-?mail|correio eletr[ôo]nico|posta elettronica'),
+  phone: w('t[ée]l[ée]phone|portable|telefone|celular|telem[óo]vel|telefono|cellulare', true),
+  // Bare "Nome" (it/pt) = first name and bare "Nom" (fr) = last name, but only
+  // when nothing follows ("Nom du poste", "Nome dell'azienda" are other fields).
+  first_name: w("pr[ée]nom|primeiro nome|nome pr[óo]prio|nome(?!\\s*[\\p{L}'’])"),
+  last_name: w("nom de famille|nom(?!\\s*[\\p{L}'’])|sobrenome|apelido|(?<!nome e )cognome"),
+  full_name: w('nom complet|nome completo|nome e cognome'),
+  zip: w('code postal|cep|c[óo]digo postal|cap|codice postale'),
+  city: w('ville|localit[ée]|cidade|localidade|citt[àa]|comune|localit[àa]'),
+  state: w('r[ée]gion|d[ée]partement|province|distrito|prov[ií]ncia|regione|provincia'),
+  country: w('pays|pa[ií]s|paese|nazione'),
+  location: w('localisation|lieu de r[ée]sidence|localiza[cç][aã]o|luogo di residenza'),
+  address: w('adresse|rue|endere[cç]o|morada|rua|indirizzo'),
+  current_company: w('employeur actuel|entreprise actuelle|empresa atual|empregador atual|azienda attuale|datore di lavoro attuale'),
+  current_title: w('poste actuel|intitul[ée] du poste|cargo atual|ruolo attuale|posizione attuale'),
+  school: w('[ée]cole|universit[ée]|[ée]tablissement|universidade|escola|institui[cç][aã]o|universit[àa]|scuola|istituto', true),
+  degree: w('dipl[ôo]me|grau acad[êe]mico|diploma|titolo di studio|laurea'),
+  field_of_study: w("domaine d['’][ée]tudes|sp[ée]cialit[ée]|[áa]rea de (estudo|forma[cç][aã]o)|corso di studi|indirizzo di studio"),
+  graduation_year: w("ann[ée]e d['’]obtention|ano de conclus[aã]o|anno di (laurea|conseguimento)"),
+  languages: w('langues|idiomas|l[íi]nguas|lingue'),
+  summary: w('[àa] propos de vous|resumo|sobre voc[êe]|su di te'),
+};
+
+const RULES: [FieldKey, RegExp[]][] = BASE_RULES.map(([key, re]) => [key, EXTRA_RULES[key] ? [re, EXTRA_RULES[key]!] : [re]]);
+
 // Attribute hints (name/id/automation ids) that are unambiguous on their own.
 const HINTS: [FieldKey, RegExp][] = [
   ['first_name', /(^|[_\-. ])(first_?name|firstname|given_?name|fname)([_\-. ]|$)/],
@@ -137,9 +192,9 @@ export function classify(field: FieldDescriptor, adapterHint?: FieldKey | null):
   // Long labels are questions ("Describe a project where you used Python…");
   // only match the specific keys against them, never generic ones like "name".
   const isLong = label.length > 90;
-  for (const [key, re] of RULES) {
+  for (const [key, patterns] of RULES) {
     if (isLong && !['consent', 'sponsorship', 'work_authorization', 'relocate', 'salary', 'years_experience', 'notice_period', 'start_date', 'how_did_you_hear', 'gender', 'ethnicity', 'veteran', 'disability', 'remote', 'cover_letter'].includes(key)) continue;
-    if (re.test(label)) return { key, via: 'label' };
+    if (patterns.some((re) => re.test(label))) return { key, via: 'label' };
   }
   for (const [key, re] of HINTS) {
     if (re.test(field.hints)) return { key, via: 'hint' };

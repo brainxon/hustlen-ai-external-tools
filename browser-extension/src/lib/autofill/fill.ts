@@ -8,16 +8,18 @@ import { normalize } from './fields';
  */
 
 const COUNTRY_ALIASES: string[][] = [
-  ['united states', 'united states of america', 'usa', 'us', 'estados unidos', 'vereinigte staaten'],
-  ['united kingdom', 'uk', 'great britain', 'england', 'reino unido', 'vereinigtes königreich'],
-  ['germany', 'deutschland', 'de', 'alemania', 'allemagne'],
-  ['spain', 'españa', 'es', 'spanien', 'espagne'],
-  ['mexico', 'méxico', 'mx', 'mexiko'],
+  ['united states', 'united states of america', 'usa', 'us', 'estados unidos', 'vereinigte staaten', 'états-unis', 'stati uniti'],
+  ['united kingdom', 'uk', 'great britain', 'england', 'reino unido', 'vereinigtes königreich', 'royaume-uni', 'regno unito'],
+  ['germany', 'deutschland', 'de', 'alemania', 'allemagne', 'alemanha', 'germania'],
+  ['spain', 'españa', 'es', 'spanien', 'espagne', 'espanha', 'spagna'],
+  ['mexico', 'méxico', 'mx', 'mexiko', 'messico'],
+  ['portugal', 'pt', 'portogallo'],
+  ['greece', 'griechenland', 'grecia', 'grèce', 'grécia', 'gr', 'ελλάδα'],
   ['austria', 'österreich', 'at'],
   ['switzerland', 'schweiz', 'suiza', 'ch', 'suisse'],
   ['netherlands', 'niederlande', 'países bajos', 'holland', 'nl'],
-  ['france', 'frankreich', 'francia', 'fr'],
-  ['italy', 'italien', 'italia', 'it'],
+  ['france', 'frankreich', 'francia', 'fr', 'frança'],
+  ['italy', 'italien', 'italia', 'it', 'italie', 'itália'],
   ['peru', 'perú', 'pe'],
   ['colombia', 'kolumbien', 'co'],
   ['argentina', 'argentinien', 'ar'],
@@ -25,13 +27,13 @@ const COUNTRY_ALIASES: string[][] = [
   ['bolivia', 'bolivien', 'bo'],
   ['ecuador', 'ec'],
   ['venezuela', 've'],
-  ['brazil', 'brasil', 'brasilien', 'br'],
+  ['brazil', 'brasil', 'brasilien', 'br', 'brésil', 'brasile'],
   ['canada', 'kanada', 'canadá', 'ca'],
 ];
 
-const YES = /^(yes|ja|s[ií]|oui|sim|y|true)\b/i;
-const NO = /^(no|nein|non|não|n|false)\b/i;
-const NEGATION = /\b(not|don'?t|do not|won'?t|will not|no|nicht|kein|nein|non|sin)\b/i;
+const YES = /^(yes|ja|s[iíì]|oui|sim|y|true)(?![\p{L}])/iu;
+const NO = /^(no|nein|non|n[aã]o|n|false)(?![\p{L}])/iu;
+const NEGATION = /(?<![\p{L}])(not|don'?t|do not|won'?t|will not|no|nicht|kein|nein|non|sin|ne|pas|n[aã]o|sem|senza)(?![\p{L}])/iu;
 
 function fold(s: string): string {
   return normalize(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');

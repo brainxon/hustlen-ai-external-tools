@@ -5,6 +5,7 @@ import type { AutofillReport, PageScan } from '@/lib/messages';
 import { storage } from 'wxt/utils/storage';
 import type { ApplicationLookup, DocumentKind, DocumentStatus, ExtensionProfile } from '@/lib/types';
 import logoSvg from '@/assets/logo.svg?raw';
+import { useT, type MessageKey } from '@/lib/i18n';
 import { AnswerBankView } from './AnswerBank';
 import { activeTab, call, panelApi } from './bridge';
 
@@ -35,6 +36,7 @@ async function isInFlight(appId: number): Promise<boolean> {
 const Logo = () => <span class="logo" dangerouslySetInnerHTML={{ __html: logoSvg }} />;
 
 export function App() {
+  const { t } = useT();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>('apply');
   const [profile, setProfile] = useState<ExtensionProfile | null>(null);
@@ -58,7 +60,7 @@ export function App() {
       return await fn();
     } catch (e: any) {
       if (e?.status === 401 || e?.code === 'not_connected') setConnected(false);
-      setError(e?.message || 'Something went wrong');
+      setError(e?.message || t('GENERIC_ERROR'));
       return undefined;
     } finally {
       setBusy(null);
@@ -122,24 +124,24 @@ export function App() {
 
   const autofill = () =>
     run('autofill', async () => {
-      if (tabId.current == null) throw new Error('Open a job application first');
+      if (tabId.current == null) throw new Error(t('ERR_OPEN_APPLICATION'));
       const r = await call<AutofillReport | { error: string }>({ type: 'tab:autofill', tabId: tabId.current });
-      if (!r) throw new Error('No application form found on this page');
+      if (!r) throw new Error(t('ERR_NO_FORM'));
       if ('error' in r) throw new Error(r.error);
       setReport(r);
-      if (r.coverLetter === 'missing') setNotice('This form has a cover letter field. Tailor this job to fill it automatically.');
+      if (r.coverLetter === 'missing') setNotice(t('COVER_LETTER_MISSING'));
     });
 
   const save = async (): Promise<number | null> => {
     if (lookup?.found && lookup.application_id) return lookup.application_id;
     if (!scan?.job) {
-      setError('Could not read a job posting on this page');
+      setError(t('ERR_NO_JOB'));
       return null;
     }
     const res = await run('save', () => call<{ application_id: number; existing: boolean }>({ type: 'app:save', job: scan.job! }));
     if (!res) return null;
     setLookup({ found: true, application_id: res.application_id, status: 'Pending', job_title: scan.job.title, company_name: scan.job.company });
-    setNotice(res.existing ? 'Already in your applications' : 'Saved to your applications');
+    setNotice(res.existing ? t('NOTICE_ALREADY_SAVED') : t('NOTICE_SAVED'));
     return res.application_id;
   };
 
@@ -155,18 +157,18 @@ export function App() {
     // (re-tailoring is an explicit, confirmed action), and a run already in
     // flight for this job blocks a second one.
     if (await isInFlight(appId)) {
-      setError('Tailoring is already running for this job');
+      setError(t('ERR_TAILOR_RUNNING'));
       return;
     }
     const docs: DocumentStatus | null = lookup?.cv_available ? (lookup as DocumentStatus) : await panelApi.documentStatus(appId).catch(() => null);
     if (docs?.cv_available && !force) {
       setLookup((l) => (l ? { ...l, ...docs } : l));
-      setNotice('This job already has a tailored CV');
+      setNotice(t('NOTICE_ALREADY_TAILORED'));
       return;
     }
     const source = profile.cv_sources.find((s) => s.key === (profile.cv?.source_key ?? '')) ?? profile.cv_sources.find((s) => s.is_default);
     if (!source) {
-      setError('Create a Master CV in hustlen.ai first');
+      setError(t('ERR_NO_MASTER_CV'));
       return;
     }
     tailorAbort.current = new AbortController();
@@ -183,7 +185,7 @@ export function App() {
             setSteps((prev) => prev.map((s) => ({ ...s, done: true })));
             setTailorDone(appId);
           }
-          if (ev.type === 'error') throw new Error(ev.message || 'Tailoring failed');
+          if (ev.type === 'error') throw new Error(ev.message || t('ERR_TAILOR_FAILED'));
         },
         tailorAbort.current?.signal,
       ),
@@ -193,7 +195,7 @@ export function App() {
   };
 
   const retailor = () => {
-    if (window.confirm('Create a new tailored version of your CV and cover letter for this job? The current version stays in hustlen.ai.')) {
+    if (window.confirm(t('CONFIRM_RETAILOR'))) {
       void tailor(true);
     }
   };
@@ -216,7 +218,7 @@ export function App() {
       if (!appId) return;
       await call({ type: 'app:markSubmitted', applicationId: appId });
       setLookup((l) => (l ? { ...l, status: 'Submitted' } : l));
-      setNotice('Marked as submitted');
+      setNotice(t('NOTICE_SUBMITTED'));
     });
 
   const selectCv = (key: string) =>
@@ -232,23 +234,23 @@ export function App() {
 
   const openInApp = (appId: number) => browser.tabs.create({ url: `${APP_BASE_URL}/home/quick-application?applicationId=${appId}` });
 
-  if (connected === null) return <div class="shell center"><div class="spinner" aria-label="Loading" /></div>;
+  if (connected === null) return <div class="shell center"><div class="spinner" aria-label={t('LOADING')} /></div>;
 
   if (!connected) {
     return (
       <div class="shell onboarding">
         <header class="brand"><Logo /><span>hustlen.ai</span></header>
-        <h1>Applying to jobs<br /><em>just got easier</em></h1>
-        <p class="lead">Autofill and track job applications with your hustlen.ai Master CV, right from the posting.</p>
+        <h1>{t('HERO_TITLE_1')}<br /><em>{t('HERO_TITLE_2')}</em></h1>
+        <p class="lead">{t('HERO_LEAD')}</p>
         <ul class="features">
-          <li><span class="dot">⚡</span>Fill application forms in one click, on Workday, Greenhouse, Lever, LinkedIn and more</li>
-          <li><span class="dot">✦</span>Draft answers to screening questions from your CV, for you to review</li>
-          <li><span class="dot">◎</span>Every job you apply to is saved and tracked automatically</li>
+          <li><span class="dot">⚡</span>{t('FEATURE_AUTOFILL')}</li>
+          <li><span class="dot">✦</span>{t('FEATURE_ANSWERS')}</li>
+          <li><span class="dot">◎</span>{t('FEATURE_TRACK')}</li>
         </ul>
         <button class="btn primary block" onClick={connect} disabled={busy === 'connect'}>
-          {busy === 'connect' ? 'Connecting…' : 'Connect with hustlen.ai'}
+          {busy === 'connect' ? t('CONNECTING') : t('CONNECT')}
         </button>
-        <p class="fine">Already signed in on hustlen.ai? It takes one click. No password is stored in the extension.</p>
+        <p class="fine">{t('CONNECT_HINT')}</p>
         {error && <p class="alert" role="alert">{error}</p>}
       </div>
     );
@@ -263,8 +265,8 @@ export function App() {
       <header class="topbar">
         <div class="brand"><Logo /><span>hustlen.ai</span></div>
         <nav class="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'apply'} class={tab === 'apply' ? 'active' : ''} onClick={() => setTab('apply')}>Apply</button>
-          <button role="tab" aria-selected={tab === 'answers'} class={tab === 'answers' ? 'active' : ''} onClick={() => setTab('answers')}>My answers</button>
+          <button role="tab" aria-selected={tab === 'apply'} class={tab === 'apply' ? 'active' : ''} onClick={() => setTab('apply')}>{t('TAB_APPLY')}</button>
+          <button role="tab" aria-selected={tab === 'answers'} class={tab === 'answers' ? 'active' : ''} onClick={() => setTab('answers')}>{t('TAB_ANSWERS')}</button>
         </nav>
       </header>
 
@@ -277,40 +279,40 @@ export function App() {
               <>
                 <div class="row between">
                   <span class="badge">{scan?.platform}</span>
-                  {saved ? <span class={`status s-${(saved.status || 'pending').toLowerCase()}`}>{saved.status}</span> : <span class="status muted">Not saved</span>}
+                  {saved ? <span class={`status s-${(saved.status || 'pending').toLowerCase()}`}>{t(`STATUS_${(saved.status || 'pending').toUpperCase()}` as MessageKey)}</span> : <span class="status muted">{t('NOT_SAVED')}</span>}
                 </div>
-                <h2 class="job-title">{job.title || 'Untitled position'}</h2>
-                <p class="job-meta">{[job.company, job.location].filter(Boolean).join(' · ') || 'Company not detected'}</p>
+                <h2 class="job-title">{job.title || t('UNTITLED_POSITION')}</h2>
+                <p class="job-meta">{[job.company, job.location].filter(Boolean).join(' · ') || t('COMPANY_NOT_DETECTED')}</p>
               </>
             ) : needsAccess ? (
               <>
-                <h2 class="job-title">Allow hustlen.ai on this page</h2>
-                <p class="job-meta">To detect jobs and autofill on any job site, not only the major ATS, the extension needs to read the page you are on.</p>
-                <button class="btn primary block access" onClick={grantAllSites}>Work on every job site</button>
-                <p class="fine">Or click the hustlen.ai toolbar icon to allow just this tab.</p>
+                <h2 class="job-title">{t('ALLOW_TITLE')}</h2>
+                <p class="job-meta">{t('ALLOW_TEXT')}</p>
+                <button class="btn primary block access" onClick={grantAllSites}>{t('ALLOW_BUTTON')}</button>
+                <p class="fine">{t('ALLOW_ALT')}</p>
               </>
             ) : (
               <>
-                <h2 class="job-title">No job posting detected</h2>
-                <p class="job-meta">{scan?.hasApplicationForm ? 'An application form is on this page. You can still autofill it.' : 'Open a job posting or application form.'}</p>
+                <h2 class="job-title">{t('NO_JOB_TITLE')}</h2>
+                <p class="job-meta">{scan?.hasApplicationForm ? t('NO_JOB_HAS_FORM') : t('NO_JOB_TEXT')}</p>
               </>
             )}
           </section>
 
           <section class="actions">
             <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan}>
-              <span>{busy === 'autofill' ? 'Filling…' : 'Autofill application'}</span>
+              <span>{busy === 'autofill' ? t('FILLING') : t('AUTOFILL')}</span>
               <kbd>⌥⇧F</kbd>
             </button>
             <div class="grid">
-              <button class="btn" onClick={save} disabled={!!busy || !job || !!saved}>{busy === 'save' ? 'Saving…' : saved ? '✓ Saved' : 'Save job'}</button>
+              <button class="btn" onClick={save} disabled={!!busy || !job || !!saved}>{busy === 'save' ? t('SAVING') : saved ? t('SAVED') : t('SAVE_JOB')}</button>
               {saved?.cv_available ? (
-                <button class="btn done" onClick={() => saved.application_id && openInApp(saved.application_id)} disabled={!!busy} title="Open the tailored CV in hustlen.ai">✓ Tailored</button>
+                <button class="btn done" onClick={() => saved.application_id && openInApp(saved.application_id)} disabled={!!busy} title={t('TAILORED_TITLE')}>{t('TAILORED')}</button>
               ) : (
-                <button class="btn" onClick={() => tailor()} disabled={!!busy || !job}>{busy === 'tailor' ? 'Tailoring…' : 'Tailor CV + letter'}</button>
+                <button class="btn" onClick={() => tailor()} disabled={!!busy || !job}>{busy === 'tailor' ? t('TAILORING') : t('TAILOR')}</button>
               )}
-              <button class="btn" onClick={markSubmitted} disabled={!!busy || !job || saved?.status === 'Submitted'}>{saved?.status === 'Submitted' ? '✓ Submitted' : 'Mark as applied'}</button>
-              <button class="btn" onClick={() => saved?.application_id && openInApp(saved.application_id)} disabled={!saved?.application_id}>Open in hustlen.ai</button>
+              <button class="btn" onClick={markSubmitted} disabled={!!busy || !job || saved?.status === 'Submitted'}>{saved?.status === 'Submitted' ? t('SUBMITTED') : t('MARK_APPLIED')}</button>
+              <button class="btn" onClick={() => saved?.application_id && openInApp(saved.application_id)} disabled={!saved?.application_id}>{t('OPEN_IN_APP')}</button>
             </div>
           </section>
 
@@ -320,59 +322,59 @@ export function App() {
           {report && (
             <section class="card report">
               <div class="stats">
-                <div><strong>{report.filled + report.aiAnswered}</strong><span>filled</span></div>
-                <div><strong>{report.needsReview.length}</strong><span>to review</span></div>
-                <div><strong>{report.unanswered.length}</strong><span>left for you</span></div>
-                <div><strong>{report.durationMs}ms</strong><span>local fill</span></div>
+                <div><strong>{report.filled + report.aiAnswered}</strong><span>{t('STAT_FILLED')}</span></div>
+                <div><strong>{report.needsReview.length}</strong><span>{t('STAT_REVIEW')}</span></div>
+                <div><strong>{report.unanswered.length}</strong><span>{t('STAT_LEFT')}</span></div>
+                <div><strong>{report.durationMs}ms</strong><span>{t('STAT_LOCAL')}</span></div>
               </div>
               {report.needsReview.length > 0 && (
                 <details>
-                  <summary>Fields to review (outlined in amber)</summary>
+                  <summary>{t('REVIEW_FIELDS')}</summary>
                   <ul>{report.needsReview.map((l) => <li key={l}>{l}</li>)}</ul>
                 </details>
               )}
-              <p class="fine">Check every answer before you submit. The extension never submits for you.</p>
+              <p class="fine">{t('CHECK_BEFORE_SUBMIT')}</p>
             </section>
           )}
 
           {steps.length > 0 && (
             <section class="card steps" aria-live="polite">
-              <h3>Tailoring your CV and cover letter</h3>
+              <h3>{t('TAILORING_TITLE')}</h3>
               <ol>{steps.map((s, i) => <li key={i} class={s.done ? 'done' : 'active'}>{s.label}</li>)}</ol>
-              {tailorDone && <p class="fine">Done. Review it in hustlen.ai to unlock the PDF download here.</p>}
+              {tailorDone && <p class="fine">{t('TAILOR_DONE')}</p>}
             </section>
           )}
 
           {saved?.application_id && (saved.cv_available || saved.cover_letter_available) && (
             <section class="card docs">
-              <h3>Your tailored documents</h3>
-              {([['cv', 'CV', saved.cv_available, saved.cv_review_confirmed], ['cover_letter', 'Cover letter', saved.cover_letter_available, saved.cover_letter_review_confirmed]] as const)
+              <h3>{t('DOCS_TITLE')}</h3>
+              {([['cv', t('DOC_CV'), saved.cv_available, saved.cv_review_confirmed], ['cover_letter', t('DOC_COVER_LETTER'), saved.cover_letter_available, saved.cover_letter_review_confirmed]] as const)
                 .filter(([, , available]) => available)
                 .map(([kind, label, , reviewed]) => (
                   <div class="doc-row" key={kind}>
                     <span>{label}</span>
                     {reviewed ? (
-                      <button class="btn small" onClick={() => download(kind)} disabled={!!busy}>{busy === 'download' ? '…' : 'Download PDF'}</button>
+                      <button class="btn small" onClick={() => download(kind)} disabled={!!busy}>{busy === 'download' ? '…' : t('DOWNLOAD_PDF')}</button>
                     ) : (
-                      <button class="btn small" onClick={() => openInApp(saved.application_id!)}>Review to download</button>
+                      <button class="btn small" onClick={() => openInApp(saved.application_id!)}>{t('REVIEW_TO_DOWNLOAD')}</button>
                     )}
                   </div>
                 ))}
               {!(saved.cv_review_confirmed && (saved.cover_letter_review_confirmed || !saved.cover_letter_available)) && (
-                <p class="fine">Downloads unlock after you review each document in hustlen.ai, so nothing AI-written goes out unchecked.</p>
+                <p class="fine">{t('DOCS_REVIEW_HINT')}</p>
               )}
               <div class="row between">
-                <button class="link" onClick={() => refreshDocuments(saved.application_id!)}>Refresh</button>
-                <button class="link" onClick={retailor} disabled={!!busy}>Re-tailor (new version)</button>
+                <button class="link" onClick={() => refreshDocuments(saved.application_id!)}>{t('REFRESH')}</button>
+                <button class="link" onClick={retailor} disabled={!!busy}>{t('RETAILOR')}</button>
               </div>
             </section>
           )}
 
           <section class="card cv">
             <label class="field">
-              <span>Fill from</span>
+              <span>{t('FILL_FROM')}</span>
               <select value={profile?.cv?.source_key ?? ''} onChange={(e) => selectCv((e.target as HTMLSelectElement).value)} disabled={!profile || busy === 'cv'}>
-                {profile?.cv_sources.length ? null : <option value="">No CV yet</option>}
+                {profile?.cv_sources.length ? null : <option value="">{t('NO_CV_YET')}</option>}
                 {profile?.cv_sources.map((s) => (
                   <option key={s.key} value={s.key}>{s.label}{s.kind === 'profile' && s.language ? ` (${s.language.toUpperCase()})` : ''}</option>
                 ))}
@@ -381,14 +383,14 @@ export function App() {
             {profile && (
               <p class="fine">
                 {profile.contact.full_name || profile.contact.email}
-                {currentCv ? ` · ${profile.cv?.experience.length ?? 0} roles · ${profile.cv?.skills.length ?? 0} skills` : ''}
+                {currentCv ? ` · ${t('CV_SUMMARY', { roles: profile.cv?.experience.length ?? 0, skills: profile.cv?.skills.length ?? 0 })}` : ''}
               </p>
             )}
           </section>
 
           <footer class="foot">
-            <button class="link" onClick={() => call({ type: 'profile:get', refresh: true }).then((p) => setProfile(p as ExtensionProfile))}>Refresh profile</button>
-            <button class="link" onClick={disconnect}>Disconnect</button>
+            <button class="link" onClick={() => call({ type: 'profile:get', refresh: true }).then((p) => setProfile(p as ExtensionProfile))}>{t('REFRESH_PROFILE')}</button>
+            <button class="link" onClick={disconnect}>{t('DISCONNECT')}</button>
           </footer>
         </main>
       )}

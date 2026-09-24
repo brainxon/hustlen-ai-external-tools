@@ -4,6 +4,7 @@ import { ADAPTERS, adapterFor, KNOWN_ATS_MATCHES } from '@/lib/autofill/adapters
 import { applyAnswers, countFormFields, runAutofill } from '@/lib/autofill/engine';
 import { extractJobDeep } from '@/lib/extract/job';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
+import { currentTranslator } from '@/lib/i18n';
 import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
 import type { ExtensionProfile, FlatCv, ScreeningAnswer } from '@/lib/types';
 import { mountInPageButton } from './button';
@@ -39,14 +40,15 @@ export default defineContentScript({
     let running = false;
 
     async function autofill(useAi?: boolean): Promise<AutofillReport | { error: string }> {
-      if (running) return { error: 'Autofill already running' };
+      const t = await currentTranslator();
+      if (running) return { error: t('ERR_AUTOFILL_RUNNING') };
       running = true;
       try {
         const [profile, answers, settings] = await Promise.all([loadProfile(), answerBankStore.getValue(), settingsStore.getValue()]);
-        if (!profile) return { error: 'Connect the extension to hustlen.ai first' };
+        if (!profile) return { error: t('ERR_NOT_CONNECTED') };
         const a = adapter();
         if (countFormFields(a) === 0) {
-          return { error: 'No application form on this page yet. Open the form (e.g. click "Apply") and try again.' };
+          return { error: t('ERR_NO_FORM_YET') };
         }
         const report = await runAutofill({ profile, answers }, a, document, {
           getTailoredCv: () => (tailoredCv ??= (async () => {
@@ -140,7 +142,8 @@ export default defineContentScript({
       const settings = await settingsStore.getValue();
       if (!settings.showInPageButton) return;
       const check = () => countFormFields(adapter()) >= 3;
-      const mount = () => mountInPageButton(() => autofill());
+      const t = await currentTranslator();
+      const mount = () => mountInPageButton(() => autofill(), t);
       if (check()) {
         mount();
         return;

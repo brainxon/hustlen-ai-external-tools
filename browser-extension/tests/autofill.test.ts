@@ -287,3 +287,52 @@ describe('section context boundaries', () => {
     expect(value('#loc')).toBe('Berlin, Berlin, Germany'); // candidate location from profile, not a job entry
   });
 });
+
+describe('French / Portuguese / Italian labels', () => {
+  it.each([
+    ['Prénom', 'first_name'], ['Nom', 'last_name'], ['Nom de famille', 'last_name'], ['Adresse e-mail', 'email'],
+    ['Numéro de téléphone', 'phone'], ['Code postal', 'zip'], ['Ville', 'city'], ['Pays', 'country'],
+    ['Lettre de motivation', 'cover_letter'], ['Prétentions salariales', 'salary'], ['Préavis', 'notice_period'],
+    ['Êtes-vous autorisé à travailler en France ?', 'work_authorization'],
+    ['Primeiro nome', 'first_name'], ['Sobrenome', 'last_name'], ['Telefone celular', 'phone'], ['CEP', 'zip'],
+    ['Cidade', 'city'], ['Pretensão salarial', 'salary'], ['Carta de apresentação', 'cover_letter'],
+    ['Nome', 'first_name'], ['Cognome', 'last_name'], ['Cellulare', 'phone'], ['CAP', 'zip'], ['Città', 'city'],
+    ['Nome e cognome', 'full_name'], ['Lettera di presentazione', 'cover_letter'], ['Preavviso', 'notice_period'],
+  ])('%s -> %s', (label, key) => {
+    mount(`<label for="x">${label}</label><input id="x">`);
+    expect(classify(discoverFields()[0]!)?.key).toBe(key);
+  });
+
+  it('does not take other "Nom …"/"Nome …" fields for names', () => {
+    for (const label of ["Nom du poste", "Nome dell'azienda"]) {
+      mount(`<label for="x">${label}</label><input id="x">`);
+      const key = classify(discoverFields()[0]!)?.key;
+      expect(['first_name', 'last_name']).not.toContain(key);
+    }
+  });
+
+  it('matches yes/no and months across languages', () => {
+    expect(matchOption(['Sì', 'No'], 'Yes', true)).toBe(0);
+    expect(matchOption(['Sim', 'Não'], 'No', false)).toBe(1);
+    expect(matchOption(['Oui', 'Non'], 'No', false)).toBe(1);
+    expect(matchOption(['Alemanha', 'Espanha'], 'Germany')).toBe(0);
+  });
+
+  it('fills an Italian experience section with month selects', async () => {
+    mount(`<h2>Esperienza lavorativa</h2>
+      <label for="r">Ruolo</label><input id="r"><label for="a">Azienda</label><input id="a">
+      <label for="m">Mese di inizio</label><select id="m"><option value="">--</option><option>Gennaio</option><option>Marzo</option></select>
+      <label for="d">Descrizione delle attività</label><textarea id="d"></textarea>`);
+    const c = ctx();
+    c.profile.cv!.experience = [{ job_title: 'Sviluppatore', company: 'Acme', location: '', dates: '03/2019 - Present', start: '03/2019', end: null, is_current: true, description: 'API' }];
+    await runAutofill(c, GENERIC_ADAPTER);
+    expect([value('#r'), value('#a'), value('#m'), value('#d')]).toEqual(['Sviluppatore', 'Acme', 'Marzo', 'API']);
+  });
+
+  it('keeps a description label with short words out of the date roles', async () => {
+    mount(`<h2>Experiencia</h2><label for="d">Describe a project you led</label><textarea id="d"></textarea>`);
+    const c = ctx();
+    await runAutofill(c, GENERIC_ADAPTER);
+    expect(value('#d')).toBe(''); // 'describe' ≠ description role; and never treated as an end date
+  });
+});

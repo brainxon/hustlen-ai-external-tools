@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "hustlen.ai – Bewerbungen automatisch ausfüllen"
+  },
+  "extDescription": {
+    "message": "Bewerbungen mit deinem hustlen.ai Master-Lebenslauf automatisch ausfüllen und verfolgen."
+  },
+  "cmdAutofill": {
+    "message": "Bewerbungsformular auf dieser Seite ausfüllen"
+  }
+}

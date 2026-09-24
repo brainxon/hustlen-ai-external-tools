@@ -1,5 +1,6 @@
 import type { AutofillReport } from '@/lib/messages';
 import logoSvg from '@/assets/logo.svg?raw';
+import type { Translate } from '@/lib/i18n';
 
 /**
  * Floating "Autofill" pill, rendered in a closed shadow root so the host
@@ -26,7 +27,7 @@ const STYLE = `
 
 const LOGO = logoSvg.replace(/fill="[^"]*"/g, 'fill="#b22a2b"').replace('<svg', '<svg aria-hidden="true"');
 
-export function mountInPageButton(onClick: () => Promise<AutofillReport | { error: string }>): void {
+export function mountInPageButton(onClick: () => Promise<AutofillReport | { error: string }>, t: Translate): void {
   if (document.querySelector('[data-hustlen-ui]')) return;
   const host = document.createElement('div');
   host.setAttribute('data-hustlen-ui', '');
@@ -35,8 +36,8 @@ export function mountInPageButton(onClick: () => Promise<AutofillReport | { erro
     <div class="wrap" role="region" aria-label="hustlen.ai">
       <div class="toast" hidden></div>
       <div class="btn-host">
-        <button class="pill" type="button"><span class="logo">${LOGO}</span><span class="label">Autofill</span></button>
-        <button class="close" type="button" aria-label="Hide">✕</button>
+        <button class="pill" type="button"><span class="logo">${LOGO}</span><span class="label">${escapeHtml(t('PAGE_AUTOFILL'))}</span></button>
+        <button class="close" type="button" aria-label="${escapeHtml(t('PAGE_HIDE'))}">✕</button>
       </div>
     </div>`;
   document.documentElement.appendChild(host);
@@ -55,19 +56,19 @@ export function mountInPageButton(onClick: () => Promise<AutofillReport | { erro
 
   pill.addEventListener('click', async () => {
     pill.disabled = true;
-    label.textContent = 'Filling…';
+    label.textContent = t('PAGE_FILLING');
     try {
       const r = await onClick();
       if ('error' in r) {
         show(`<span class="warn">${escapeHtml(r.error)}</span>`);
       } else {
-        const review = r.needsReview.length ? ` · <span class="warn">${r.needsReview.length} to review</span>` : '';
-        const open = r.unanswered.length ? ` · ${r.unanswered.length} left for you` : '';
-        show(`<b>${r.filled + r.aiAnswered} fields filled</b>${review}${open}<br><small>Review everything before you submit.</small>`);
+        const review = r.needsReview.length ? ` · <span class="warn">${escapeHtml(t('PAGE_TO_REVIEW', { count: r.needsReview.length }))}</span>` : '';
+        const open = r.unanswered.length ? ` · ${escapeHtml(t('PAGE_LEFT', { count: r.unanswered.length }))}` : '';
+        show(`<b>${escapeHtml(t('PAGE_FILLED', { count: r.filled + r.aiAnswered }))}</b>${review}${open}<br><small>${escapeHtml(t('PAGE_REVIEW_HINT'))}</small>`);
       }
     } finally {
       pill.disabled = false;
-      label.textContent = 'Autofill';
+      label.textContent = t('PAGE_AUTOFILL');
     }
   });
   shadow.querySelector('.close')!.addEventListener('click', () => host.remove());

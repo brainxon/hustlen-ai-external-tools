@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { useT, type MessageKey } from '@/lib/i18n';
 import { answerBankStore, settingsStore, type AnswerBank, type Settings, DEFAULT_SETTINGS, EMPTY_ANSWER_BANK } from '@/lib/storage';
 
 /**
@@ -11,31 +12,35 @@ import { answerBankStore, settingsStore, type AnswerBank, type Settings, DEFAULT
 type YesNoKey = 'workAuthorized' | 'needsSponsorship' | 'willingToRelocate';
 type TextKey = Exclude<keyof AnswerBank, YesNoKey | 'custom'>;
 
-const YES_NO: [YesNoKey, string][] = [
-  ['workAuthorized', 'Are you legally authorized to work in the job’s country?'],
-  ['needsSponsorship', 'Will you now or in the future require visa sponsorship?'],
-  ['willingToRelocate', 'Are you willing to relocate?'],
+const YES_NO: [YesNoKey, MessageKey][] = [
+  ['workAuthorized', 'Q_WORK_AUTH'],
+  ['needsSponsorship', 'Q_SPONSORSHIP'],
+  ['willingToRelocate', 'Q_RELOCATE'],
 ];
 
-const TEXT: [TextKey, string, string][] = [
-  ['salaryExpectation', 'Salary expectation', 'e.g. 65000 EUR'],
-  ['noticePeriod', 'Notice period', 'e.g. 1 month'],
-  ['earliestStartDate', 'Earliest start date', 'YYYY-MM-DD'],
-  ['yearsOfExperience', 'Years of experience', 'e.g. 6'],
-  ['remotePreference', 'Work arrangement', 'Remote / Hybrid / On-site'],
-  ['howDidYouHear', 'How did you hear about us?', 'e.g. LinkedIn'],
-  ['website', 'Website / portfolio', 'https://'],
-  ['github', 'GitHub', 'https://github.com/…'],
+const TEXT: [TextKey, MessageKey, MessageKey | string][] = [
+  ['salaryExpectation', 'F_SALARY', 'F_SALARY_PH'],
+  ['noticePeriod', 'F_NOTICE', 'F_NOTICE_PH'],
+  ['earliestStartDate', 'F_START', 'F_START_PH'],
+  ['yearsOfExperience', 'F_YEARS', 'F_YEARS_PH'],
+  ['remotePreference', 'F_REMOTE', 'F_REMOTE_PH'],
+  ['howDidYouHear', 'F_HEAR', 'F_HEAR_PH'],
+  ['website', 'F_WEBSITE', 'https://'],
+  ['github', 'F_GITHUB', 'https://github.com/…'],
 ];
 
-const EEO: [TextKey, string][] = [
-  ['gender', 'Gender'],
-  ['ethnicity', 'Race / ethnicity'],
-  ['veteranStatus', 'Veteran status'],
-  ['disabilityStatus', 'Disability status'],
+const EEO: [TextKey, MessageKey][] = [
+  ['gender', 'F_GENDER'],
+  ['ethnicity', 'F_ETHNICITY'],
+  ['veteranStatus', 'F_VETERAN'],
+  ['disabilityStatus', 'F_DISABILITY'],
 ];
+
+const LANGUAGE_NAMES = { en: 'English', de: 'Deutsch', es: 'Español' } as const;
 
 export function AnswerBankView() {
+  const { t } = useT();
+  const ph = (k: string) => (k.startsWith('F_') ? t(k as MessageKey) : k);
   const [bank, setBank] = useState<AnswerBank>(EMPTY_ANSWER_BANK);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
@@ -58,16 +63,16 @@ export function AnswerBankView() {
 
   return (
     <main class="stack answers">
-      <p class="lead small">Answer these once. Autofill reuses them instantly on every application.</p>
+      <p class="lead small">{t('ANSWERS_LEAD')}</p>
 
       <section class="card">
         {YES_NO.map(([key, label]) => (
           <fieldset class="yesno" key={key}>
-            <legend>{label}</legend>
+            <legend>{t(label)}</legend>
             {(['yes', 'no'] as const).map((v) => (
               <label key={v}>
                 <input type="radio" name={key} checked={bank[key] === v} onChange={() => update({ [key]: v } as Partial<AnswerBank>)} />
-                {v === 'yes' ? 'Yes' : 'No'}
+                {v === 'yes' ? t('YES') : t('NO')}
               </label>
             ))}
           </fieldset>
@@ -77,50 +82,66 @@ export function AnswerBankView() {
       <section class="card">
         {TEXT.map(([key, label, placeholder]) => (
           <label class="field" key={key}>
-            <span>{label}</span>
-            <input value={bank[key] as string} placeholder={placeholder} onInput={(e) => update({ [key]: (e.target as HTMLInputElement).value } as Partial<AnswerBank>)} />
+            <span>{t(label)}</span>
+            <input value={bank[key] as string} placeholder={ph(placeholder)} onInput={(e) => update({ [key]: (e.target as HTMLInputElement).value } as Partial<AnswerBank>)} />
           </label>
         ))}
       </section>
 
       <section class="card">
-        <h3>Voluntary self-identification</h3>
-        <p class="fine">Optional. Only used if you fill it in here. AI never answers these for you.</p>
+        <h3>{t('EEO_TITLE')}</h3>
+        <p class="fine">{t('EEO_HINT')}</p>
         {EEO.map(([key, label]) => (
           <label class="field" key={key}>
-            <span>{label}</span>
-            <input value={bank[key] as string} placeholder="e.g. Prefer not to say" onInput={(e) => update({ [key]: (e.target as HTMLInputElement).value } as Partial<AnswerBank>)} />
+            <span>{t(label)}</span>
+            <input value={bank[key] as string} placeholder={t('EEO_PH')} onInput={(e) => update({ [key]: (e.target as HTMLInputElement).value } as Partial<AnswerBank>)} />
           </label>
         ))}
       </section>
 
       <section class="card">
-        <h3>Custom answers</h3>
-        <p class="fine">Reused whenever a form asks a similar question.</p>
+        <h3>{t('CUSTOM_TITLE')}</h3>
+        <p class="fine">{t('CUSTOM_HINT')}</p>
         {bank.custom.map((c, i) => (
           <div class="custom" key={i}>
-            <input value={c.question} placeholder="Question" onInput={(e) => update({ custom: bank.custom.map((x, j) => (j === i ? { ...x, question: (e.target as HTMLInputElement).value } : x)) })} />
-            <textarea value={c.answer} placeholder="Your answer" rows={2} onInput={(e) => update({ custom: bank.custom.map((x, j) => (j === i ? { ...x, answer: (e.target as HTMLTextAreaElement).value } : x)) })} />
-            <button class="link danger" onClick={() => update({ custom: bank.custom.filter((_, j) => j !== i) })}>Remove</button>
+            <input value={c.question} placeholder={t('CUSTOM_Q_PH')} onInput={(e) => update({ custom: bank.custom.map((x, j) => (j === i ? { ...x, question: (e.target as HTMLInputElement).value } : x)) })} />
+            <textarea value={c.answer} placeholder={t('CUSTOM_A_PH')} rows={2} onInput={(e) => update({ custom: bank.custom.map((x, j) => (j === i ? { ...x, answer: (e.target as HTMLTextAreaElement).value } : x)) })} />
+            <button class="link danger" onClick={() => update({ custom: bank.custom.filter((_, j) => j !== i) })}>{t('REMOVE')}</button>
           </div>
         ))}
-        <button class="btn" onClick={() => update({ custom: [...bank.custom, { question: '', answer: '' }] })}>+ Add answer</button>
+        <button class="btn" onClick={() => update({ custom: [...bank.custom, { question: '', answer: '' }] })}>{t('ADD_ANSWER')}</button>
       </section>
 
       <section class="card">
-        <h3>Settings</h3>
+        <h3>{t('SETTINGS_TITLE')}</h3>
         <label class="toggle">
           <input type="checkbox" checked={settings.useAiForOpenQuestions} onChange={(e) => setSettings({ ...settings, useAiForOpenQuestions: (e.target as HTMLInputElement).checked })} />
-          Draft open questions with AI from my CV
+          {t('SETTING_AI')}
         </label>
         <label class="toggle">
           <input type="checkbox" checked={settings.showInPageButton} onChange={(e) => setSettings({ ...settings, showInPageButton: (e.target as HTMLInputElement).checked })} />
-          Show the Autofill button on application pages
+          {t('SETTING_BUTTON')}
+        </label>
+        <label class="field">
+          <span>{t('SETTING_LANGUAGE')}</span>
+          <select
+            value={settings.uiLanguage ?? 'auto'}
+            onChange={async (e) => {
+              const next = { ...settings, uiLanguage: (e.target as HTMLSelectElement).value as typeof settings.uiLanguage };
+              setSettings(next);
+              await settingsStore.setValue(next); // applies immediately, no need to press Save
+            }}
+          >
+            <option value="auto">{t('LANGUAGE_AUTO')}</option>
+            {(Object.keys(LANGUAGE_NAMES) as (keyof typeof LANGUAGE_NAMES)[]).map((l) => (
+              <option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>
+            ))}
+          </select>
         </label>
       </section>
 
       <div class="sticky-save">
-        <button class="btn primary block" onClick={persist}>{saved ? '✓ Saved' : 'Save answers'}</button>
+        <button class="btn primary block" onClick={persist}>{saved ? t('ANSWERS_SAVED') : t('SAVE_ANSWERS')}</button>
       </div>
     </main>
   );

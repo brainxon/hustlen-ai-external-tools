@@ -44,6 +44,8 @@ export interface AnswerBank {
 
 export interface Settings {
   selectedCvSource: string | null;
+  /** Extension UI language; 'auto' follows the browser. */
+  uiLanguage: 'auto' | 'en' | 'de' | 'es';
   showInPageButton: boolean;
   useAiForOpenQuestions: boolean;
 }
@@ -69,6 +71,7 @@ export const EMPTY_ANSWER_BANK: AnswerBank = {
 
 export const DEFAULT_SETTINGS: Settings = {
   selectedCvSource: null,
+  uiLanguage: 'auto',
   showInPageButton: true,
   useAiForOpenQuestions: true,
 };

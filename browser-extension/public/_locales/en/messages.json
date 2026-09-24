@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "hustlen.ai – Job Application Autofill"
+  },
+  "extDescription": {
+    "message": "Autofill and track job applications from your hustlen.ai Master CV."
+  },
+  "cmdAutofill": {
+    "message": "Autofill the application form on this page"
+  }
+}

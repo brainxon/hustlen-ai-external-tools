@@ -123,7 +123,7 @@ export function extractJob(doc: Document, loc: URL, adapter: PlatformAdapter): E
   // Generic fallback: the main content, only if it reads like a posting.
   const main = doc.querySelector<HTMLElement>('main, [role="main"], article') ?? doc.body;
   const text = (main?.innerText || main?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
-  const looksLikeJob = /\b(responsibilit|requirement|qualification|experience|aufgaben|anforderungen|profil|requisitos|responsabilidades|we offer|what you('| wi)ll do)\b/i.test(text);
+  const looksLikeJob = /\b(responsibilit|requirement|qualification|experience|aufgaben|anforderungen|profil|requisitos|responsabilidades|we offer|what you('| wi)ll do|missions|comp[ée]tences|nous offrons|requisiti|responsabilit[àa]|offriamo|atribui[cç][õo]es|oferecemos)/i.test(text);
   if (text.length >= MIN_DESCRIPTION && looksLikeJob) {
     const h1 = doc.querySelector('h1')?.textContent?.trim() || doc.title;
     return { title: ld?.title || h1 || '', company: ld?.company || '', location: ld?.location || '', description: text.slice(0, MAX_DESCRIPTION), url, source: 'page-text', platform: adapter.id };
