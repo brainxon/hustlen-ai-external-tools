@@ -11,6 +11,8 @@ export default defineConfig({
   modules: ['@wxt-dev/auto-icons'],
   autoIcons: { baseIconPath: 'assets/icon.svg', developmentIndicator: false },
   vite: () => ({ plugins: [preact()] }),
+  // Store packages: never ship env files (secrets, dev hosts) in the Firefox sources zip.
+  zip: { excludeSources: ['.env', '.env.*', '!.env.example', '.output/**', 'coverage/**'] },
   manifest: ({ browser }) => ({
     name: '__MSG_extName__',
     short_name: 'hustlen.ai',

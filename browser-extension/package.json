@@ -1,6 +1,6 @@
 {
   "name": "hustlen-browser-extension",
-  "description": "hustlen.ai – autofill and track job applications from your Master CV",
+  "description": "hustlen.ai \u2013 autofill and track job applications from your Master CV",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -15,7 +15,10 @@
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "zip:all": "wxt zip && wxt zip -b edge && wxt zip -b firefox --mv3",
+    "submit:init": "wxt submit init",
+    "submit": "wxt submit --chrome-api-version v2 --chrome-zip .output/*-chrome.zip --edge-zip .output/*-edge.zip --firefox-zip .output/*-firefox.zip --firefox-sources-zip .output/*-sources.zip"
   },
   "dependencies": {
     "preact": "^10.29.8"
