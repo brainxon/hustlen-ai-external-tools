@@ -125,3 +125,13 @@ export interface ApplicationLookup extends Partial<DocumentStatus> {
 
 export type ApplicationStatus =
   | 'Pending' | 'Submitted' | 'Invited' | 'Interviewed' | 'Rejected' | 'Hired' | 'Canceled' | 'Obsolete';
+
+export interface PlanSummary {
+  plan: string;
+  tokens_used: number;
+  tokens_total: number | null;
+  tokens_remaining: number | null;
+  lifetime_limit: boolean;
+  period_end: string | null;
+  usage_ratio: number;
+}

@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { APP_BASE_URL } from '@/lib/config';
 import type { AutofillReport, PageScan } from '@/lib/messages';
 import { storage } from 'wxt/utils/storage';
-import type { ApplicationLookup, DocumentKind, DocumentStatus, ExtensionProfile } from '@/lib/types';
+import type { ApplicationLookup, DocumentKind, DocumentStatus, ExtensionProfile, PlanSummary } from '@/lib/types';
 import logoSvg from '@/assets/logo.svg?raw';
 import { useT, type MessageKey } from '@/lib/i18n';
 import { AnswerBankView } from './AnswerBank';
@@ -49,6 +49,8 @@ export function App() {
   const [steps, setSteps] = useState<TailorStep[]>([]);
   const [tailorDone, setTailorDone] = useState<number | null>(null);
   const [needsAccess, setNeedsAccess] = useState(false);
+  const [plan, setPlan] = useState<PlanSummary | null>(null);
+  const [upgradeNeeded, setUpgradeNeeded] = useState(false);
   const tabId = useRef<number | null>(null);
   const tailorAbort = useRef<AbortController | null>(null);
 
@@ -56,16 +58,28 @@ export function App() {
     setBusy(kind);
     setError(null);
     setNotice(null);
+    setUpgradeNeeded(false);
     try {
       return await fn();
     } catch (e: any) {
       if (e?.status === 401 || e?.code === 'not_connected') setConnected(false);
-      setError(e?.message || t('GENERIC_ERROR'));
+      // Plan limits (AI credits, missing capability, quota): a clear message + upgrade, not a raw error.
+      if (e?.status === 402 || ['token_credits_exceeded', 'capability_missing', 'limit_reached', 'lifetime_limit_reached', 'template_not_allowed'].includes(e?.code)) {
+        setUpgradeNeeded(true);
+        setError(t('LIMIT_REACHED'));
+        refreshPlan();
+      } else {
+        setError(e?.message || t('GENERIC_ERROR'));
+      }
       return undefined;
     } finally {
       setBusy(null);
     }
   }, []);
+
+  const refreshPlan = () => {
+    call<PlanSummary>({ type: 'plan:get' }).then(setPlan).catch(() => undefined);
+  };
 
   const refreshPage = useCallback(async () => {
     const t = await activeTab();
@@ -97,6 +111,7 @@ export function App() {
   useEffect(() => {
     if (!connected) return;
     call<ExtensionProfile>({ type: 'profile:get' }).then(setProfile).catch((e) => setError(e.message));
+    refreshPlan();
     refreshPage();
     const onActivated = () => refreshPage();
     const onUpdated = (id: number, info: { status?: string }) => {
@@ -129,7 +144,11 @@ export function App() {
       if (!r) throw new Error(t('ERR_NO_FORM'));
       if ('error' in r) throw new Error(r.error);
       setReport(r);
-      if (r.coverLetter === 'missing') setNotice(t('COVER_LETTER_MISSING'));
+      if (r.aiSkipped === 'credits') {
+        setNotice(t('AI_SKIPPED_CREDITS'));
+        setUpgradeNeeded(true);
+      } else if (r.coverLetter === 'missing') setNotice(t('COVER_LETTER_MISSING'));
+      if (r.aiAnswered) refreshPlan();
     });
 
   const save = async (): Promise<number | null> => {
@@ -138,9 +157,9 @@ export function App() {
       setError(t('ERR_NO_JOB'));
       return null;
     }
-    const res = await run('save', () => call<{ application_id: number; existing: boolean }>({ type: 'app:save', job: scan.job! }));
-    if (!res) return null;
-    setLookup({ found: true, application_id: res.application_id, status: 'Pending', job_title: scan.job.title, company_name: scan.job.company });
+    const res = await run('save', () => call<ApplicationLookup & { existing: boolean }>({ type: 'app:save', job: scan.job! }));
+    if (!res?.application_id) return null;
+    setLookup({ ...res, found: true });
     setNotice(res.existing ? t('NOTICE_ALREADY_SAVED') : t('NOTICE_SAVED'));
     return res.application_id;
   };
@@ -175,8 +194,13 @@ export function App() {
     setSteps([]);
     setTailorDone(null);
     await markInFlight(appId, true);
-    await run('tailor', () =>
-      panelApi.streamTailor(
+    await run('tailor', async () => {
+      // Jobs saved from the extension get their keywords/language extracted
+      // here, only once and only if missing (credit-gated on the backend).
+      setSteps([{ label: t('PREPARING'), done: false }]);
+      await panelApi.prepareForTailoring(appId);
+      setSteps([{ label: t('PREPARING'), done: true }]);
+      return panelApi.streamTailor(
         appId,
         source.kind === 'root' ? { root_cv_language: source.root_cv_language } : { user_cv_id: source.user_cv_id },
         (ev) => {
@@ -188,10 +212,11 @@ export function App() {
           if (ev.type === 'error') throw new Error(ev.message || t('ERR_TAILOR_FAILED'));
         },
         tailorAbort.current?.signal,
-      ),
-    );
+      );
+    });
     await markInFlight(appId, false);
     await refreshDocuments(appId);
+    refreshPlan();
   };
 
   const retailor = () => {
@@ -318,6 +343,9 @@ export function App() {
 
           {notice && <p class="notice" role="status">{notice}</p>}
           {error && <p class="alert" role="alert">{error}</p>}
+          {upgradeNeeded && (
+            <button class="btn primary block" onClick={() => browser.tabs.create({ url: `${APP_BASE_URL}/home/plans` })}>{t('UPGRADE')}</button>
+          )}
 
           {report && (
             <section class="card report">
@@ -387,6 +415,28 @@ export function App() {
               </p>
             )}
           </section>
+
+          {plan && (
+            <section class={`card plan ${plan.usage_ratio >= 1 ? 'exhausted' : plan.usage_ratio >= 0.8 ? 'near' : ''}`}>
+              <div class="row between">
+                <strong class="plan-name">{t('PLAN_LABEL', { plan: plan.plan.charAt(0).toUpperCase() + plan.plan.slice(1) })}</strong>
+                {(plan.plan === 'free' || plan.usage_ratio >= 0.8) && (
+                  <button class="link" onClick={() => browser.tabs.create({ url: `${APP_BASE_URL}/home/plans` })}>{t('UPGRADE')}</button>
+                )}
+              </div>
+              {plan.tokens_total ? (
+                <>
+                  <div class="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(plan.usage_ratio * 100)}>
+                    <span style={{ width: `${Math.min(100, Math.round(plan.usage_ratio * 100))}%` }} />
+                  </div>
+                  <p class="fine">{t(plan.lifetime_limit ? 'AI_USAGE_LIFETIME' : 'AI_USAGE', { pct: Math.round(plan.usage_ratio * 100) })}</p>
+                  {plan.usage_ratio >= 1 ? <p class="fine warn">{t('PLAN_EXHAUSTED')}</p> : plan.usage_ratio >= 0.8 ? <p class="fine warn">{t('PLAN_NEAR_LIMIT')}</p> : null}
+                </>
+              ) : (
+                <p class="fine">{t('AI_UNLIMITED')}</p>
+              )}
+            </section>
+          )}
 
           <footer class="foot">
             <button class="link" onClick={() => call({ type: 'profile:get', refresh: true }).then((p) => setProfile(p as ExtensionProfile))}>{t('REFRESH_PROFILE')}</button>

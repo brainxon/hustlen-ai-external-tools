@@ -87,12 +87,10 @@ async function handle(msg: BackgroundRequest): Promise<unknown> {
     }
     case 'app:lookup':
       return api.lookupApplication(msg.url);
-    case 'app:save': {
-      const existing = await api.lookupApplication(msg.job.url);
-      if (existing.found) return { application_id: existing.application_id, existing: true };
-      const created = await api.createApplication(msg.job);
-      return { application_id: created.application_id, existing: false };
-    }
+    case 'app:save':
+      return api.saveJob(msg.job);
+    case 'plan:get':
+      return api.plan();
     case 'app:coverLetterText': {
       const found = await api.lookupApplication(msg.url);
       if (!found.found || !found.application_id || !found.cover_letter_available) return null;

@@ -129,6 +129,17 @@ const en = {
   LANGUAGE_AUTO: 'Browser language',
   SAVE_ANSWERS: 'Save answers',
   ANSWERS_SAVED: '✓ Saved',
+  // Plan / limits
+  PLAN_LABEL: "Plan: {plan}",
+  AI_USAGE: "AI credits used this period: {pct}%",
+  AI_USAGE_LIFETIME: "AI credits used: {pct}%",
+  AI_UNLIMITED: "AI credits: unlimited",
+  PLAN_NEAR_LIMIT: "You are close to your plan’s AI limit.",
+  PLAN_EXHAUSTED: "You have used all AI credits in your plan. Saving jobs and autofill still work.",
+  UPGRADE: "Upgrade plan",
+  LIMIT_REACHED: "Your plan’s limit for this action is reached.",
+  AI_SKIPPED_CREDITS: "Open questions were not drafted: your plan’s AI credits are used up.",
+  PREPARING: "Preparing the job…",
   // In-page button
   PAGE_AUTOFILL: 'Autofill',
   PAGE_FILLING: 'Filling…',

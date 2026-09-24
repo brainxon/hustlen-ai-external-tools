@@ -70,6 +70,7 @@ export default defineContentScript({
         if (wantAi && report.unanswered.length) {
           const job = await extractJobDeep(document, new URL(location.href), a);
           const res = await send<ScreeningAnswer[]>({ type: 'ai:answer', questions: report.unanswered.slice(0, 25), job: job ?? undefined });
+          if (!res.ok && res.status === 402) report.aiSkipped = 'credits';
           if (res.ok) {
             const { applied, review } = await applyAnswers(res.data);
             report.aiAnswered = applied;

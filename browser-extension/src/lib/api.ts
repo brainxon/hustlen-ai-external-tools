@@ -6,6 +6,7 @@ import type {
   ApplicationStatus,
   ExtensionProfile,
   ExtractedJob,
+  PlanSummary,
   ScreeningAnswer,
   ScreeningQuestion,
 } from './types';
@@ -70,21 +71,32 @@ export class HustlenApi {
     return this.request(`/extension/applications/lookup?url=${encodeURIComponent(url)}`);
   }
 
-  /** Saves the posting the user is on as an application (status Pending). */
-  async createApplication(job: ExtractedJob): Promise<{ application_id: number }> {
-    const header = [job.title && `Job title: ${job.title}`, job.company && `Company: ${job.company}`, job.location && `Location: ${job.location}`, `URL: ${job.url}`]
-      .filter(Boolean)
-      .join('\n');
-    const created = await this.request<{ application_id: number }>('/applications/from-job-description', {
+  /**
+   * Saves the job on the current page for tracking: the fields the extension
+   * extracted, no AI and no plan quota on the backend (REQ-EXT-007). Returns
+   * the existing application for the same job URL instead of a duplicate.
+   */
+  saveJob(job: ExtractedJob): Promise<ApplicationLookup & { existing: boolean }> {
+    return this.request('/extension/applications', {
       method: 'POST',
-      body: JSON.stringify({ message_text: `${header}\n\n${job.description}`.slice(0, 60000) }),
+      body: JSON.stringify({
+        url: job.url,
+        title: job.title.slice(0, 300),
+        company: job.company.slice(0, 300),
+        location: job.location.slice(0, 300),
+        description: job.description.slice(0, 60000),
+        source: job.source,
+      }),
     });
-    // from-job-description has no url field; set it so the duplicate check finds it next time.
-    await this.request(`/applications/${created.application_id}/job_posting`, {
-      method: 'PATCH',
-      body: JSON.stringify({ url: job.url }),
-    }).catch(() => undefined);
-    return created;
+  }
+
+  /** Job keywords + language before tailoring, only if missing (credit-gated, 402 when exhausted). */
+  prepareForTailoring(applicationId: number): Promise<{ prepared: boolean; extracted: boolean }> {
+    return this.request(`/extension/applications/${applicationId}/prepare`, { method: 'POST' });
+  }
+
+  plan(): Promise<PlanSummary> {
+    return this.request('/extension/plan');
   }
 
   documentStatus(applicationId: number): Promise<DocumentStatus> {

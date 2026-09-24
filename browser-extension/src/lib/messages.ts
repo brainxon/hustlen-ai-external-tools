@@ -11,6 +11,7 @@ export type BackgroundRequest =
   | { type: 'profile:selectCv'; cvSource: string }
   | { type: 'app:lookup'; url: string }
   | { type: 'app:save'; job: ExtractedJob }
+  | { type: 'plan:get' }
   | { type: 'app:markSubmitted'; applicationId: number }
   | { type: 'ai:answer'; questions: ScreeningQuestion[]; job?: Partial<ExtractedJob>; applicationId?: number | null }
   | { type: 'app:coverLetterText'; url: string }
@@ -45,6 +46,8 @@ export interface AutofillReport {
   coverLetter?: 'filled' | 'missing';
   /** "Add another" blocks opened for extra experience/education entries. */
   sectionsAdded?: number;
+  /** The AI answer step was skipped because the plan's AI credits ran out. */
+  aiSkipped?: 'credits';
 }
 
 export interface AutofillContext {
