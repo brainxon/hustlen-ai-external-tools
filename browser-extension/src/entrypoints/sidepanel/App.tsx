@@ -2,17 +2,34 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { browser } from 'wxt/browser';
 import { APP_BASE_URL } from '@/lib/config';
 import type { AutofillReport, PageScan } from '@/lib/messages';
-import type { ApplicationLookup, ExtensionProfile } from '@/lib/types';
+import { storage } from 'wxt/utils/storage';
+import type { ApplicationLookup, DocumentKind, DocumentStatus, ExtensionProfile } from '@/lib/types';
 import logoSvg from '@/assets/logo.svg?raw';
 import { AnswerBankView } from './AnswerBank';
 import { activeTab, call, panelApi } from './bridge';
 
 type Tab = 'apply' | 'answers';
-type Busy = null | 'connect' | 'autofill' | 'save' | 'tailor' | 'submit' | 'cv';
+type Busy = null | 'connect' | 'autofill' | 'save' | 'tailor' | 'submit' | 'cv' | 'download';
 
 interface TailorStep {
   label: string;
   done: boolean;
+}
+
+/** Tailoring runs in flight, per application - survives closing/reopening the panel. */
+const inFlight = storage.defineItem<Record<string, number>>('session:tailoringInFlight', { fallback: {} });
+const IN_FLIGHT_TTL_MS = 15 * 60 * 1000;
+
+async function markInFlight(appId: number, on: boolean) {
+  const all = await inFlight.getValue();
+  if (on) all[appId] = Date.now();
+  else delete all[appId];
+  await inFlight.setValue(all);
+}
+
+async function isInFlight(appId: number): Promise<boolean> {
+  const started = (await inFlight.getValue())[appId];
+  return !!started && Date.now() - started < IN_FLIGHT_TTL_MS;
 }
 
 const Logo = () => <span class="logo" dangerouslySetInnerHTML={{ __html: logoSvg }} />;
@@ -125,9 +142,27 @@ export function App() {
     return res.application_id;
   };
 
-  const tailor = async () => {
+  const refreshDocuments = async (appId: number) => {
+    const docs = await panelApi.documentStatus(appId).catch(() => null);
+    if (docs) setLookup((l) => (l ? { ...l, ...docs } : l));
+  };
+
+  const tailor = async (force = false) => {
     const appId = await save();
     if (!appId || !profile) return;
+    // Never run the pipeline twice by accident: an existing tailored CV stays
+    // (re-tailoring is an explicit, confirmed action), and a run already in
+    // flight for this job blocks a second one.
+    if (await isInFlight(appId)) {
+      setError('Tailoring is already running for this job');
+      return;
+    }
+    const docs: DocumentStatus | null = lookup?.cv_available ? (lookup as DocumentStatus) : await panelApi.documentStatus(appId).catch(() => null);
+    if (docs?.cv_available && !force) {
+      setLookup((l) => (l ? { ...l, ...docs } : l));
+      setNotice('This job already has a tailored CV');
+      return;
+    }
     const source = profile.cv_sources.find((s) => s.key === (profile.cv?.source_key ?? '')) ?? profile.cv_sources.find((s) => s.is_default);
     if (!source) {
       setError('Create a Master CV in hustlen.ai first');
@@ -136,6 +171,7 @@ export function App() {
     tailorAbort.current = new AbortController();
     setSteps([]);
     setTailorDone(null);
+    await markInFlight(appId, true);
     await run('tailor', () =>
       panelApi.streamTailor(
         appId,
@@ -151,7 +187,27 @@ export function App() {
         tailorAbort.current?.signal,
       ),
     );
+    await markInFlight(appId, false);
+    await refreshDocuments(appId);
   };
+
+  const retailor = () => {
+    if (window.confirm('Create a new tailored version of your CV and cover letter for this job? The current version stays in hustlen.ai.')) {
+      void tailor(true);
+    }
+  };
+
+  const download = (kind: DocumentKind) =>
+    run('download', async () => {
+      if (!lookup?.application_id) return;
+      const { blob, filename } = await panelApi.downloadDocument(lookup.application_id, kind);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    });
 
   const markSubmitted = () =>
     run('submit', async () => {
@@ -247,7 +303,11 @@ export function App() {
             </button>
             <div class="grid">
               <button class="btn" onClick={save} disabled={!!busy || !job || !!saved}>{busy === 'save' ? 'Saving…' : saved ? '✓ Saved' : 'Save job'}</button>
-              <button class="btn" onClick={tailor} disabled={!!busy || !job}>{busy === 'tailor' ? 'Tailoring…' : 'Tailor CV + letter'}</button>
+              {saved?.cv_available ? (
+                <button class="btn done" onClick={() => saved.application_id && openInApp(saved.application_id)} disabled={!!busy} title="Open the tailored CV in hustlen.ai">✓ Tailored</button>
+              ) : (
+                <button class="btn" onClick={() => tailor()} disabled={!!busy || !job}>{busy === 'tailor' ? 'Tailoring…' : 'Tailor CV + letter'}</button>
+              )}
               <button class="btn" onClick={markSubmitted} disabled={!!busy || !job || saved?.status === 'Submitted'}>{saved?.status === 'Submitted' ? '✓ Submitted' : 'Mark as applied'}</button>
               <button class="btn" onClick={() => saved?.application_id && openInApp(saved.application_id)} disabled={!saved?.application_id}>Open in hustlen.ai</button>
             </div>
@@ -278,7 +338,32 @@ export function App() {
             <section class="card steps" aria-live="polite">
               <h3>Tailoring your CV and cover letter</h3>
               <ol>{steps.map((s, i) => <li key={i} class={s.done ? 'done' : 'active'}>{s.label}</li>)}</ol>
-              {tailorDone && <button class="btn primary block" onClick={() => openInApp(tailorDone)}>Review and download in hustlen.ai</button>}
+              {tailorDone && <p class="fine">Done. Review it in hustlen.ai to unlock the PDF download here.</p>}
+            </section>
+          )}
+
+          {saved?.application_id && (saved.cv_available || saved.cover_letter_available) && (
+            <section class="card docs">
+              <h3>Your tailored documents</h3>
+              {([['cv', 'CV', saved.cv_available, saved.cv_review_confirmed], ['cover_letter', 'Cover letter', saved.cover_letter_available, saved.cover_letter_review_confirmed]] as const)
+                .filter(([, , available]) => available)
+                .map(([kind, label, , reviewed]) => (
+                  <div class="doc-row" key={kind}>
+                    <span>{label}</span>
+                    {reviewed ? (
+                      <button class="btn small" onClick={() => download(kind)} disabled={!!busy}>{busy === 'download' ? '…' : 'Download PDF'}</button>
+                    ) : (
+                      <button class="btn small" onClick={() => openInApp(saved.application_id!)}>Review to download</button>
+                    )}
+                  </div>
+                ))}
+              {!(saved.cv_review_confirmed && (saved.cover_letter_review_confirmed || !saved.cover_letter_available)) && (
+                <p class="fine">Downloads unlock after you review each document in hustlen.ai, so nothing AI-written goes out unchecked.</p>
+              )}
+              <div class="row between">
+                <button class="link" onClick={() => refreshDocuments(saved.application_id!)}>Refresh</button>
+                <button class="link" onClick={retailor} disabled={!!busy}>Re-tailor (new version)</button>
+              </div>
             </section>
           )}
 

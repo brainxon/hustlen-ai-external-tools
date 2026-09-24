@@ -152,3 +152,8 @@ kbd { font: 600 11px/1 ui-monospace, 'JetBrains Mono', monospace; background: rg
 }
 
 .btn.access { margin-top: 12px; }
+.btn.done { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.btn.small { min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+.docs .doc-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; font-weight: 600; }
+.docs .doc-row:last-of-type { border-bottom: 0; }
+.docs .row { margin-top: 8px; }

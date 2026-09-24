@@ -106,7 +106,16 @@ export interface ExtractedJob {
   platform: string;
 }
 
-export interface ApplicationLookup {
+export interface DocumentStatus {
+  cv_available: boolean;
+  cover_letter_available: boolean;
+  cv_review_confirmed: boolean;
+  cover_letter_review_confirmed: boolean;
+}
+
+export type DocumentKind = 'cv' | 'cover_letter';
+
+export interface ApplicationLookup extends Partial<DocumentStatus> {
   found: boolean;
   application_id: number | null;
   status: string | null;

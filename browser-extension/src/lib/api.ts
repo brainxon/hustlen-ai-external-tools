@@ -1,6 +1,8 @@
 import { API_BASE_URL } from './config';
 import type {
   ApplicationLookup,
+  DocumentKind,
+  DocumentStatus,
   ApplicationStatus,
   ExtensionProfile,
   ExtractedJob,
@@ -83,6 +85,23 @@ export class HustlenApi {
       body: JSON.stringify({ url: job.url }),
     }).catch(() => undefined);
     return created;
+  }
+
+  documentStatus(applicationId: number): Promise<DocumentStatus> {
+    return this.request(`/extension/applications/${applicationId}/documents`);
+  }
+
+  /** Reviewed tailored CV / cover letter as PDF. 403 review_not_confirmed until reviewed in hustlen.ai. */
+  async downloadDocument(applicationId: number, kind: DocumentKind): Promise<{ blob: Blob; filename: string }> {
+    const res = await this.authedFetch(`/extension/applications/${applicationId}/documents/${kind}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const { message, code } = messageFrom(body, res.status);
+      throw new ApiError(message, res.status, code);
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `${kind}.pdf`;
+    return { blob: await res.blob(), filename };
   }
 
   setStatus(applicationId: number, status: ApplicationStatus): Promise<unknown> {
