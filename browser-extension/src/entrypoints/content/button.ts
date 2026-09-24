@@ -27,8 +27,9 @@ const STYLE = `
 
 const LOGO = logoSvg.replace(/fill="[^"]*"/g, 'fill="#b22a2b"').replace('<svg', '<svg aria-hidden="true"');
 
-export function mountInPageButton(onClick: () => Promise<AutofillReport | { error: string }>, t: Translate): void {
-  if (document.querySelector('[data-hustlen-ui]')) return;
+export function mountInPageButton(onClick: () => Promise<AutofillReport | { error: string }>, t: Translate): HTMLElement {
+  // A button left by a previous (orphaned) copy of the script is replaced, not kept.
+  document.querySelectorAll('[data-hustlen-ui]').forEach((el) => el.remove());
   const host = document.createElement('div');
   host.setAttribute('data-hustlen-ui', '');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -72,6 +73,7 @@ export function mountInPageButton(onClick: () => Promise<AutofillReport | { erro
     }
   });
   shadow.querySelector('.close')!.addEventListener('click', () => host.remove());
+  return host;
 }
 
 function escapeHtml(s: string): string {

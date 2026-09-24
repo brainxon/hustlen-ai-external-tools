@@ -185,6 +185,18 @@ export default defineBackground(() => {
   });
 
   void syncAllSitesScript();
+
+  // After an install/update/reload, already-open tabs still run the old,
+  // orphaned content script (it tears itself down). Give them a fresh one so
+  // the in-page button keeps working without a page reload.
+  browser.runtime.onInstalled.addListener(async () => {
+    const settings = await settingsStore.getValue();
+    const tabs = await browser.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => []);
+    for (const tab of tabs) {
+      if (tab.id == null || siteBlockReason(tab.url || '', settings.pausedSites ?? [])) continue;
+      browser.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['/content-scripts/content.js'] }).catch(() => undefined);
+    }
+  });
   browser.permissions.onAdded.addListener(() => void syncAllSitesScript());
   browser.permissions.onRemoved.addListener(() => void syncAllSitesScript());
 

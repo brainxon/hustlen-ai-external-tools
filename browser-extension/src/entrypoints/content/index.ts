@@ -4,7 +4,8 @@ import { ADAPTERS, adapterFor, KNOWN_ATS_MATCHES } from '@/lib/autofill/adapters
 import { applyAnswers, countFormFields, runAutofill } from '@/lib/autofill/engine';
 import { extractJobDeep } from '@/lib/extract/job';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
-import { currentTranslator } from '@/lib/i18n';
+import { extensionAlive, safely } from '@/lib/context';
+import { currentTranslator, translator } from '@/lib/i18n';
 import { looksLikeJobContext, siteBlockReason } from '@/lib/sites';
 import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
 import type { ExtensionProfile, FlatCv, ScreeningAnswer } from '@/lib/types';
@@ -20,16 +21,33 @@ export default defineContentScript({
   allFrames: true,
   runAt: 'document_idle',
   main() {
-    const w = window as unknown as { __hustlenLoaded?: boolean };
-    if (w.__hustlenLoaded) return;
-    w.__hustlenLoaded = true;
+    // One live instance per frame. A previous copy orphaned by an extension
+    // reload/update is told to tear down, and this fresh one takes over.
+    const w = window as unknown as { __hustlen?: { alive: () => boolean; teardown: () => void } };
+    if (!extensionAlive()) return;
+    if (w.__hustlen?.alive()) return;
+    w.__hustlen?.teardown();
     void ADAPTERS; // keep adapters in this bundle
 
-    const send = <T>(msg: BackgroundRequest) => browser.runtime.sendMessage(msg) as Promise<BackgroundResponse<T>>;
+    const observers = new Set<MutationObserver>();
+    let buttonHost: HTMLElement | null = null;
+    let dead = false;
+    const teardown = () => {
+      if (dead) return;
+      dead = true;
+      observers.forEach((o) => o.disconnect());
+      observers.clear();
+      buttonHost?.remove();
+    };
+    w.__hustlen = { alive: () => !dead && extensionAlive(), teardown };
+    const guard = <T,>(fn: () => Promise<T>, fallback: T) => safely(fn, fallback, teardown);
+
+    const send = <T,>(msg: BackgroundRequest) =>
+      guard(() => browser.runtime.sendMessage(msg) as Promise<BackgroundResponse<T>>, { ok: false, error: 'extension_reloaded' } as BackgroundResponse<T>);
     const adapter = () => adapterFor(new URL(location.href));
 
     async function loadProfile(): Promise<ExtensionProfile | null> {
-      const cached = await profileStore.getValue().catch(() => null);
+      const cached = await guard(() => profileStore.getValue(), null).catch(() => null);
       if (cached?.profile) return cached.profile;
       const res = await send<ExtensionProfile>({ type: 'profile:get' });
       return res.ok ? res.data : null;
@@ -41,11 +59,17 @@ export default defineContentScript({
     let running = false;
 
     async function autofill(useAi?: boolean): Promise<AutofillReport | { error: string }> {
-      const t = await currentTranslator();
+      const t = await guard(() => currentTranslator(), translator('en'));
+      if (dead) return { error: 'extension_reloaded' };
       if (running) return { error: t('ERR_AUTOFILL_RUNNING') };
       running = true;
       try {
-        const [profile, answers, settings] = await Promise.all([loadProfile(), answerBankStore.getValue(), settingsStore.getValue()]);
+        const [profile, answers, settings] = await Promise.all([
+          loadProfile(),
+          guard(() => answerBankStore.getValue(), null),
+          guard(() => settingsStore.getValue(), null),
+        ]);
+        if (dead || !answers || !settings) return { error: 'extension_reloaded' };
         if (!profile) return { error: t('ERR_NOT_CONNECTED') };
         const a = adapter();
         if (countFormFields(a) === 0) {
@@ -95,6 +119,7 @@ export default defineContentScript({
       let timer: number | undefined;
       const stopAt = Date.now() + 15 * 60 * 1000;
       sticky = new MutationObserver((mutations) => {
+        if (!extensionAlive()) return teardown();
         if (Date.now() > stopAt) {
           sticky?.disconnect();
           sticky = null;
@@ -108,6 +133,7 @@ export default defineContentScript({
         timer = window.setTimeout(() => void autofill(), 400);
       });
       sticky.observe(document.body, { childList: true, subtree: true });
+      observers.add(sticky);
     }
 
     async function scan(): Promise<PageScan> {
@@ -123,7 +149,9 @@ export default defineContentScript({
 
     // Own/local/non-job/paused sites: stay silent (no button, no autofill).
     let blocked: ReturnType<typeof siteBlockReason> = siteBlockReason(location.href);
-    void settingsStore.getValue().then((s) => (blocked = siteBlockReason(location.href, s.pausedSites ?? [])));
+    void guard(() => settingsStore.getValue(), null).then((s) => {
+      if (s) blocked = siteBlockReason(location.href, s.pausedSites ?? []);
+    });
 
     browser.runtime.onMessage.addListener((msg: ContentRequest, _sender, sendResponse) => {
       if (blocked) {
@@ -149,13 +177,16 @@ export default defineContentScript({
 
     // In-page "Autofill" button, only where an application form is present.
     void (async () => {
-      const settings = await settingsStore.getValue();
-      if (!settings.showInPageButton || siteBlockReason(location.href, settings.pausedSites ?? [])) return;
+      const settings = await guard(() => settingsStore.getValue(), null);
+      if (!settings || !settings.showInPageButton || siteBlockReason(location.href, settings.pausedSites ?? [])) return;
       // An application form, on a page that actually looks like a job context
       // (not a checkout, sign-up or contact form).
       const check = () => countFormFields(adapter()) >= 3 && looksLikeJobContext(document, location.href);
-      const t = await currentTranslator();
-      const mount = () => mountInPageButton(() => autofill(), t);
+      const t = await guard(() => currentTranslator(), translator('en'));
+      if (dead) return;
+      const mount = () => {
+        buttonHost = mountInPageButton(() => autofill(), t);
+      };
       if (check()) {
         mount();
         return;
@@ -164,6 +195,7 @@ export default defineContentScript({
       // "Apply now"), so keep watching - debounced, and only until it mounts.
       let pending: number | undefined;
       const obs = new MutationObserver(() => {
+        if (!extensionAlive()) return teardown();
         clearTimeout(pending);
         pending = window.setTimeout(() => {
           if (check()) {
@@ -173,6 +205,7 @@ export default defineContentScript({
         }, 300);
       });
       obs.observe(document.body, { childList: true, subtree: true });
+      observers.add(obs);
     })();
   },
 });
