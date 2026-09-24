@@ -74,11 +74,31 @@ async function write(field: FieldDescriptor, resolved: ResolvedValue): Promise<b
 
 const NEVER_ASK_AI: FieldKey[] = ['consent', 'resume', 'cover_letter', 'gender', 'ethnicity', 'veteran', 'disability', 'work_authorization', 'sponsorship'];
 
-export async function runAutofill(ctx: AutofillContext, adapter: PlatformAdapter, doc: Document = document): Promise<AutofillReport> {
+export interface CoverLetterSource {
+  text: string;
+  /** Review confirmed in hustlen.ai - otherwise the field is outlined for review. */
+  reviewed: boolean;
+}
+
+export interface AutofillOptions {
+  /** Called lazily, at most once, only when a cover-letter TEXT field is present. */
+  getCoverLetter?: () => Promise<CoverLetterSource | null>;
+}
+
+const TEXT_KINDS = new Set(['textarea', 'text']);
+
+export async function runAutofill(
+  ctx: AutofillContext,
+  adapter: PlatformAdapter,
+  doc: Document = document,
+  options: AutofillOptions = {},
+): Promise<AutofillReport> {
   const started = performance.now();
   const scope = adapter.formRoot?.(doc) ?? doc;
   const fields = discoverFields(scope);
   const report: AutofillReport = { filled: 0, skipped: 0, fromAnswerBank: 0, aiAnswered: 0, needsReview: [], unanswered: [], durationMs: 0 };
+
+  let coverLetter: Promise<CoverLetterSource | null> | null = null;
 
   for (const field of fields) {
     byId.set(field.id, field);
@@ -87,6 +107,22 @@ export async function runAutofill(ctx: AutofillContext, adapter: PlatformAdapter
       continue;
     }
     const cls = classify(field, adapter.hint?.(field));
+
+    // Cover letter asked as a text field (some forms do, instead of an upload):
+    // fill it with the tailored cover letter for this job, if there is one.
+    if (cls?.key === 'cover_letter' && TEXT_KINDS.has(field.kind)) {
+      coverLetter ??= options.getCoverLetter ? options.getCoverLetter().catch(() => null) : Promise.resolve(null);
+      const cl = await coverLetter;
+      if (cl?.text && fillText(field.element as HTMLTextAreaElement, cl.text, field.maxLength)) {
+        report.filled++;
+        report.coverLetter = 'filled';
+        highlight(field, cl.reviewed ? 'filled' : 'review');
+        if (!cl.reviewed) report.needsReview.push(field.label || 'Cover letter');
+      } else {
+        report.coverLetter = 'missing';
+      }
+      continue;
+    }
     const resolved = cls ? resolveValue(cls.key, ctx) : null;
     const custom = !resolved && field.label ? matchCustomAnswer(field.label, ctx.answers) : null;
 

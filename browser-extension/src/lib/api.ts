@@ -104,6 +104,10 @@ export class HustlenApi {
     return { blob: await res.blob(), filename };
   }
 
+  coverLetterText(applicationId: number): Promise<{ text: string; review_confirmed: boolean }> {
+    return this.request(`/extension/applications/${applicationId}/documents/cover_letter/text`);
+  }
+
   setStatus(applicationId: number, status: ApplicationStatus): Promise<unknown> {
     return this.request(`/applications/${applicationId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
   }

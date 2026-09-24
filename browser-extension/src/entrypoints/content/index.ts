@@ -43,7 +43,18 @@ export default defineContentScript({
         const [profile, answers, settings] = await Promise.all([loadProfile(), answerBankStore.getValue(), settingsStore.getValue()]);
         if (!profile) return { error: 'Connect the extension to hustlen.ai first' };
         const a = adapter();
-        const report = await runAutofill({ profile, answers }, a);
+        if (countFormFields(a) === 0) {
+          return { error: 'No application form on this page yet. Open the form (e.g. click "Apply") and try again.' };
+        }
+        const report = await runAutofill({ profile, answers }, a, document, {
+          // Only fetched when the form asks for the cover letter as TEXT (not an upload).
+          getCoverLetter: async () => {
+            const job = await extractJobDeep(document, new URL(location.href), a);
+            if (!job) return null;
+            const res = await send<{ text: string; reviewed: boolean } | null>({ type: 'app:coverLetterText', url: job.url });
+            return res.ok ? res.data : null;
+          },
+        });
 
         const wantAi = useAi ?? settings.useAiForOpenQuestions;
         if (wantAi && report.unanswered.length) {
@@ -124,14 +135,19 @@ export default defineContentScript({
         mount();
         return;
       }
+      // Many boards open the form later, in a modal or a new step (e.g. after
+      // "Apply now"), so keep watching - debounced, and only until it mounts.
+      let pending: number | undefined;
       const obs = new MutationObserver(() => {
-        if (check()) {
-          obs.disconnect();
-          mount();
-        }
+        clearTimeout(pending);
+        pending = window.setTimeout(() => {
+          if (check()) {
+            obs.disconnect();
+            mount();
+          }
+        }, 300);
       });
       obs.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => obs.disconnect(), 60_000);
     })();
   },
 });

@@ -110,8 +110,14 @@ const HINTS: [FieldKey, RegExp][] = [
   ['phone', /(^|[_\-. ])(phone|mobile|tel)([_\-. ]|number|$)/],
   ['linkedin', /linkedin/],
   ['github', /github/],
-  ['zip', /(zip|postal)/],
-  ['city', /(^|[_\-. ])city([_\-. ]|$)/],
+  ['zip', /(zip|postal|post_?code|postleitzahl|\bplz\b)/],
+  ['city', /(^|[_\-. ])(city|town)([_\-. ]|$)/],
+  ['country', /(^|[_\-. ])country([_\-. ]|$)/],
+  ['state', /(^|[_\-. ])(state|province|region)([_\-. ]|$)/],
+  ['address', /(^|[_\-. ])(address|street)(_?line_?1)?([_\-. ]|$)/],
+  ['headline', /(^|[_\-. ])headline([_\-. ]|$)/],
+  ['summary', /(^|[_\-. ])summary([_\-. ]|$)/],
+  ['cover_letter', /cover_?letter/],
 ];
 
 export function classify(field: FieldDescriptor, adapterHint?: FieldKey | null): Classification | null {

@@ -127,6 +127,7 @@ export function App() {
       if (!r) throw new Error('No application form found on this page');
       if ('error' in r) throw new Error(r.error);
       setReport(r);
+      if (r.coverLetter === 'missing') setNotice('This form has a cover letter field. Tailor this job to fill it automatically.');
     });
 
   const save = async (): Promise<number | null> => {
@@ -297,7 +298,7 @@ export function App() {
           </section>
 
           <section class="actions">
-            <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan?.hasApplicationForm}>
+            <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan}>
               <span>{busy === 'autofill' ? 'Filling…' : 'Autofill application'}</span>
               <kbd>⌥⇧F</kbd>
             </button>

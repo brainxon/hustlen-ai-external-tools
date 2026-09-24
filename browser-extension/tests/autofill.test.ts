@@ -146,3 +146,54 @@ describe('stem rules match inflections and compounds', () => {
     expect(classify(discoverFields()[0]!)?.key).toBe(key);
   });
 });
+
+describe('cover letter as a text field', () => {
+  it('fills a cover-letter textarea from the tailored letter, lazily and once; never a file input', async () => {
+    mount(`
+      <label for="cl">Cover letter (Optional)</label><textarea id="cl"></textarea>
+      <label for="clf">Cover letter</label><input id="clf" type="file">
+      <label for="cl2">Motivationsschreiben</label><textarea id="cl2"></textarea>`);
+    const getCoverLetter = vi.fn(async () => ({ text: 'Dear team,\n\nI am excited…', reviewed: false }));
+    const report = await runAutofill(ctx(), GENERIC_ADAPTER, document, { getCoverLetter });
+    expect(getCoverLetter).toHaveBeenCalledTimes(1);
+    expect(value('#cl')).toBe('Dear team,\n\nI am excited…');
+    expect(value('#cl2')).toBe('Dear team,\n\nI am excited…');
+    expect((document.querySelector('#clf') as HTMLInputElement).files?.length ?? 0).toBe(0);
+    expect(report.coverLetter).toBe('filled');
+    expect((document.querySelector('#cl') as HTMLElement).dataset.hustlenFill).toBe('review'); // not reviewed yet
+  });
+
+  it('reports missing when the job has no tailored letter, and never asks for it without a text field', async () => {
+    mount('<label for="cl">Cover letter</label><textarea id="cl"></textarea>');
+    const report = await runAutofill(ctx(), GENERIC_ADAPTER, document, { getCoverLetter: async () => null });
+    expect(report.coverLetter).toBe('missing');
+    expect(value('#cl')).toBe('');
+    expect(report.unanswered).toHaveLength(0); // not sent to the AI screening step either
+
+    mount('<label for="fn">First name</label><input id="fn">');
+    const spy = vi.fn();
+    await runAutofill(ctx(), GENERIC_ADAPTER, document, { getCoverLetter: spy });
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Workable-style modal form (igwork.gr)', () => {
+  it('fills unlabeled fields by name and reads radio questions from aria-labelledby', async () => {
+    mount(`
+      <div role="dialog">
+        <span id="firstname_label">First name</span><input name="firstname" aria-labelledby="firstname_label">
+        <input name="lastname"><input name="email" type="email"><input name="phone" type="tel">
+        <input name="city"><input name="postcode"><input name="country">
+        <label for="s">Summary (Optional)</label><textarea id="s" name="summary"></textarea>
+        <span id="q1_label">Are you willing to relocate to Athens?</span>
+        <div role="radiogroup" aria-labelledby="q1_label">
+          <label><input type="radio" name="QA_1" value="y"> YES</label><label><input type="radio" name="QA_1" value="n"> NO</label>
+        </div>
+      </div>`);
+    await runAutofill(ctx({ willingToRelocate: 'yes' }), GENERIC_ADAPTER);
+    const v = (n: string) => (document.querySelector(`[name="${n}"]`) as HTMLInputElement).value;
+    expect([v('firstname'), v('lastname'), v('email'), v('city'), v('postcode'), v('country')]).toEqual(['Ana', 'García', 'ana@example.com', 'Berlin', '10115', 'Germany']);
+    expect(v('summary')).toBe('Python engineer.');
+    expect((document.querySelector('input[value="y"]') as HTMLInputElement).checked).toBe(true);
+  });
+});

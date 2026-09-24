@@ -93,6 +93,12 @@ async function handle(msg: BackgroundRequest): Promise<unknown> {
       const created = await api.createApplication(msg.job);
       return { application_id: created.application_id, existing: false };
     }
+    case 'app:coverLetterText': {
+      const found = await api.lookupApplication(msg.url);
+      if (!found.found || !found.application_id || !found.cover_letter_available) return null;
+      const cl = await api.coverLetterText(found.application_id);
+      return { text: cl.text, reviewed: cl.review_confirmed };
+    }
     case 'app:markSubmitted':
       return api.setStatus(msg.applicationId, 'Submitted');
     case 'ai:answer': {
