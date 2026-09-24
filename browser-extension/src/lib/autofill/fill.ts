@@ -210,3 +210,43 @@ export function highlight(field: FieldDescriptor, kind: Highlight): void {
     t.addEventListener('input', clear, { once: true });
   }
 }
+
+
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Attaches a file to an <input type="file"> the way a user's pick would:
+ * DataTransfer -> input.files, then input/change events. For drag-and-drop
+ * upload zones that hide their input, a synthetic drop on the zone follows.
+ */
+export function attachFile(input: HTMLInputElement, file: { name: string; type: string; base64: string }): boolean {
+  if (typeof DataTransfer === 'undefined') return false;
+  if (input.accept && !/pdf|\*|application/i.test(input.accept)) return false; // e.g. an image-only field
+  try {
+    const f = new File([base64ToBytes(file.base64) as BlobPart], file.name, { type: file.type });
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!input.files?.length) return false;
+    const zone = input.closest('[class*="drop" i], [class*="upload" i], [data-automation-id*="file" i]') as HTMLElement | null;
+    if (zone && zone !== input) {
+      for (const type of ['dragenter', 'dragover', 'drop']) {
+        try {
+          zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+        } catch {
+          /* DragEvent unsupported: the input change above already carried the file */
+        }
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}

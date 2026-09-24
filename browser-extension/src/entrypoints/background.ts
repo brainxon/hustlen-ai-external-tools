@@ -69,6 +69,25 @@ async function ensureContentScript(tabId: number): Promise<void> {
   }
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** CV to attach: the job's tailored CV if the user reviewed it, else their Master CV (own data, no AI). */
+async function resumeFileFor(url: string) {
+  const found = await api.lookupApplication(url).catch(() => null);
+  if (found?.found && found.application_id && found.cv_available && found.cv_review_confirmed) {
+    const doc = await api.downloadDocument(found.application_id, 'cv').catch(() => null);
+    if (doc) return { name: doc.filename, type: 'application/pdf', base64: await blobToBase64(doc.blob), source: 'tailored' as const };
+  }
+  const settings = await settingsStore.getValue();
+  const master = await api.masterCvPdf(settings.selectedCvSource).catch(() => null);
+  return master ? { name: master.filename, type: 'application/pdf', base64: await blobToBase64(master.blob), source: 'master' as const } : null;
+}
+
 /** Never inject into / act on own, local, non-job or user-paused sites. */
 async function blockedTab(tabId: number) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
@@ -113,6 +132,13 @@ async function handle(msg: BackgroundRequest): Promise<unknown> {
       if (!found.found || !found.application_id || !found.cv_available) return null;
       const t = await api.tailoredCv(found.application_id);
       return { cv: t.cv, reviewed: t.review_confirmed };
+    }
+    case 'app:resumeFile':
+      return resumeFileFor(msg.url);
+    case 'tab:captureAnswers': {
+      if (await blockedTab(msg.tabId)) return [];
+      await ensureContentScript(msg.tabId);
+      return browser.tabs.sendMessage(msg.tabId, { type: 'page:captureAnswers' } satisfies ContentRequest);
     }
     case 'app:markSubmitted':
       return api.setStatus(msg.applicationId, 'Submitted');

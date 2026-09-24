@@ -95,6 +95,19 @@ export class HustlenApi {
     return this.request(`/extension/applications/${applicationId}/prepare`, { method: 'POST' });
   }
 
+  /** The user's Master CV as PDF (own data, no AI, no review gate) for resume upload fields. */
+  async masterCvPdf(cvSource?: string | null): Promise<{ blob: Blob; filename: string }> {
+    const q = cvSource ? `?cv_source=${encodeURIComponent(cvSource)}` : '';
+    const res = await this.authedFetch(`/extension/cv/master-pdf${q}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const { message, code } = messageFrom(body, res.status);
+      throw new ApiError(message, res.status, code);
+    }
+    const filename = (res.headers.get('content-disposition') || '').match(/filename="?([^";]+)"?/)?.[1] || 'CV.pdf';
+    return { blob: await res.blob(), filename };
+  }
+
   plan(): Promise<PlanSummary> {
     return this.request('/extension/plan');
   }

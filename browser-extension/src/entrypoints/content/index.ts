@@ -7,9 +7,11 @@ import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequ
 import { extensionAlive, safely } from '@/lib/context';
 import { currentTranslator, translator } from '@/lib/i18n';
 import { looksLikeJobContext, siteBlockReason } from '@/lib/sites';
-import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
+import { answerBankStore, learnedStore, profileStore, settingsStore, type LearnedCandidate } from '@/lib/storage';
 import type { ExtensionProfile, FlatCv, ScreeningAnswer } from '@/lib/types';
-import { mountInPageButton } from './button';
+import { mountInPageButton, showPrompt } from './button';
+import { captureAnswers, mergePending, newToBank, saveToBank, stepOf } from '@/lib/autofill/learn';
+import type { ResumeFile } from '@/lib/autofill/engine';
 
 /**
  * Runs in job pages (statically on known ATS hosts, or injected on demand
@@ -76,6 +78,12 @@ export default defineContentScript({
           return { error: t('ERR_NO_FORM_YET') };
         }
         const report = await runAutofill({ profile, answers }, a, document, {
+          // "Upload your resume": the job's reviewed tailored CV, else the Master CV (no AI - free).
+          getResumeFile: async () => {
+            const job = await extractJobDeep(document, new URL(location.href), a);
+            const res = await send<ResumeFile | null>({ type: 'app:resumeFile', url: job?.url ?? location.href });
+            return res.ok ? res.data : null;
+          },
           getTailoredCv: () => (tailoredCv ??= (async () => {
             const job = await extractJobDeep(document, new URL(location.href), a);
             if (!job) return null;
@@ -169,11 +177,94 @@ export default defineContentScript({
         autofill(msg.useAi).then(sendResponse);
         return true;
       }
+      if (msg.type === 'page:captureAnswers') {
+        if (window !== window.top && countFormFields(adapter()) < 2) return;
+        learnFromPage('manual').then(sendResponse);
+        return true;
+      }
       if (msg.type === 'page:applyAnswers') {
         applyAnswers(msg.answers).then(sendResponse);
         return true;
       }
     });
+
+    // ---------------------------------------------------------------- answer learning
+    // Answers the user types (or corrects) are read at "Next"/"Submit" and,
+    // with their consent, offered for saving so the next form fills them.
+    // Nothing is kept until the user opted in (see lib/autofill/learn.ts).
+    let unconsented: LearnedCandidate[] = [];
+
+    async function learnFromPage(kind: 'next' | 'submit' | 'manual'): Promise<LearnedCandidate[]> {
+      if (dead || blocked) return [];
+      const [settings, bank] = await Promise.all([guard(() => settingsStore.getValue(), null), guard(() => answerBankStore.getValue(), null)]);
+      if (!settings || !bank || settings.learnAnswers === false) return [];
+      if (kind !== 'manual' && !looksLikeJobContext(document, location.href)) return [];
+      const fresh = newToBank(captureAnswers(adapter()), bank);
+      if (settings.learnAnswers === null) {
+        // Not opted in yet: keep only in this page's memory and ask at submit.
+        unconsented = mergePending(unconsented, fresh);
+        if (kind === 'submit' && unconsented.length) askToRemember(unconsented.length);
+        return unconsented;
+      }
+      const pending = mergePending((await guard(() => learnedStore.getValue(), [])) ?? [], fresh);
+      await guard(() => learnedStore.setValue(pending), undefined);
+      const here = pending.filter((p) => p.host === location.hostname);
+      if (kind === 'submit' && here.length) askToSave(here);
+      return here;
+    }
+
+    async function saveCandidates(items: LearnedCandidate[]) {
+      const bank = await guard(() => answerBankStore.getValue(), null);
+      if (!bank) return;
+      await guard(() => answerBankStore.setValue(saveToBank(bank, items)), undefined);
+      const ids = new Set(items.map((i) => i.id));
+      const rest = ((await guard(() => learnedStore.getValue(), [])) ?? []).filter((p) => !ids.has(p.id));
+      await guard(() => learnedStore.setValue(rest), undefined);
+    }
+
+    async function askToSave(items: LearnedCandidate[]) {
+      const t = await guard(() => currentTranslator(), translator('en'));
+      showPrompt({
+        title: t('LEARN_SAVE_TITLE', { count: items.length }),
+        body: t('LEARN_SAVE_BODY'),
+        primary: t('LEARN_SAVE'),
+        secondary: t('LEARN_LATER'),
+        onPrimary: () => saveCandidates(items),
+      });
+    }
+
+    async function askToRemember(count: number) {
+      const t = await guard(() => currentTranslator(), translator('en'));
+      showPrompt({
+        title: t('LEARN_OPTIN_TITLE', { count }),
+        body: t('LEARN_OPTIN_BODY'),
+        primary: t('LEARN_OPTIN_YES'),
+        secondary: t('LEARN_OPTIN_NO'),
+        onPrimary: async () => {
+          const settings = await guard(() => settingsStore.getValue(), null);
+          if (!settings) return;
+          await guard(() => settingsStore.setValue({ ...settings, learnAnswers: true }), undefined);
+          await saveCandidates(unconsented);
+          unconsented = [];
+        },
+        onSecondary: async () => {
+          const settings = await guard(() => settingsStore.getValue(), null);
+          if (settings) await guard(() => settingsStore.setValue({ ...settings, learnAnswers: false }), undefined);
+          unconsented = [];
+        },
+      });
+    }
+
+    // Capture phase: runs before the page's own handler tears the step down.
+    document.addEventListener(
+      'click',
+      (e) => {
+        const kind = stepOf(e.target);
+        if (kind && extensionAlive()) void learnFromPage(kind);
+      },
+      true,
+    );
+    document.addEventListener('submit', () => extensionAlive() && void learnFromPage('submit'), true);
 
     // In-page "Autofill" button, only where an application form is present.
     void (async () => {

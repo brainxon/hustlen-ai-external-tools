@@ -2,10 +2,13 @@ import type { AnswerBank } from '../storage';
 import type { AutofillContext, AutofillReport } from '../messages';
 import type { ScreeningAnswer, ScreeningQuestion } from '../types';
 import type { PlatformAdapter } from './adapters';
-import { discoverFields, hasValue, normalize, type FieldDescriptor } from './fields';
+import { discoverFields, hasValue, type FieldDescriptor } from './fields';
 import { fillCheckboxes, fillChoice, fillCombobox, fillSelect, fillText, highlight } from './fill';
 import { classify, type FieldKey } from './matcher';
 import { assignSectionSlots, findAddButton, MAX_SECTION_ENTRIES, sectionValue, type SectionKind } from './sections';
+import { readAnswer } from './learn';
+import { fieldFingerprint, findSavedAnswer, siteScope } from './similarity';
+import { attachFile } from './fill';
 import type { FlatCv } from '../types';
 import { resolveValue, type ResolvedValue } from './values';
 
@@ -37,21 +40,16 @@ export function questionType(field: FieldDescriptor): ScreeningQuestion['type'] 
   }
 }
 
-function tokens(s: string): Set<string> {
-  return new Set(normalize(s).toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').split(' ').filter((t) => t.length > 2));
+
+/** Saved answer for a question (fuzzy, multi-language; see similarity.ts). */
+export function matchCustomAnswer(label: string, bank: AnswerBank, fp?: string): string | null {
+  return findSavedAnswer({ label, fp }, bank)?.answer ?? null;
 }
 
-/** Saved custom Q&A whose question is close enough (token Jaccard ≥ 0.6). */
-export function matchCustomAnswer(label: string, bank: AnswerBank): string | null {
-  const q = tokens(label);
-  let best: { score: number; answer: string } | null = null;
-  for (const item of bank.custom) {
-    const t = tokens(item.question);
-    const inter = [...q].filter((x) => t.has(x)).length;
-    const score = inter / (q.size + t.size - inter || 1);
-    if (score >= 0.6 && (!best || score > best.score)) best = { score, answer: item.answer };
-  }
-  return best?.answer ?? null;
+/** Remembers what the extension wrote, so a later user edit can be told apart (answer learning). */
+function markFilled(field: FieldDescriptor): void {
+  const el = field.group[0] ?? field.element;
+  el.dataset.hustlenValue = readAnswer(field);
 }
 
 async function write(field: FieldDescriptor, resolved: ResolvedValue): Promise<boolean> {
@@ -87,7 +85,17 @@ export interface TailoredCvSource {
   reviewed: boolean;
 }
 
+export interface ResumeFile {
+  name: string;
+  type: string;
+  base64: string;
+  /** 'tailored' = the job's reviewed tailored CV; 'master' = the user's Master CV. */
+  source: 'tailored' | 'master';
+}
+
 export interface AutofillOptions {
+  /** CV to attach to "upload your resume" fields; called lazily, only when such a field is empty. */
+  getResumeFile?: () => Promise<ResumeFile | null>;
   /** Called lazily, at most once, only when a cover-letter TEXT field is present. */
   getCoverLetter?: () => Promise<CoverLetterSource | null>;
   /** The job's tailored CV, called lazily only when experience/education sections exist. */
@@ -108,6 +116,8 @@ export async function runAutofill(
   const report: AutofillReport = { filled: 0, skipped: 0, fromAnswerBank: 0, aiAnswered: 0, needsReview: [], unanswered: [], durationMs: 0 };
 
   let coverLetter: Promise<CoverLetterSource | null> | null = null;
+  let resumeFile: Promise<ResumeFile | null> | null = null;
+  const site = siteScope(doc.defaultView?.location?.href ?? '');
 
   // Work-experience / education sections: entry by entry, from the job's
   // tailored CV when there is one, else the selected Master CV.
@@ -146,6 +156,7 @@ export async function runAutofill(
         }
         if (ok) {
           report.filled++;
+          markFilled(field);
           sectionFilled.add(slot.kind);
           const needsReview = sectionCv!.tailored && !sectionCv!.reviewed && (slot.role === 'description' || slot.role === 'title');
           highlight(field, needsReview ? 'review' : 'filled');
@@ -157,6 +168,20 @@ export async function runAutofill(
 
     const cls = classify(field, adapter.hint?.(field));
 
+    // "Upload your resume": attach the job's reviewed tailored CV, else the Master CV.
+    if (cls?.key === 'resume' && field.kind === 'file') {
+      resumeFile ??= options.getResumeFile ? options.getResumeFile().catch(() => null) : Promise.resolve(null);
+      const file = await resumeFile;
+      if (file && attachFile(field.element as HTMLInputElement, file)) {
+        report.filled++;
+        report.resume = file.source;
+        highlight(field, 'filled');
+      } else if (!report.resume) {
+        report.resume = 'missing';
+      }
+      continue;
+    }
+
     // Cover letter asked as a text field (some forms do, instead of an upload):
     // fill it with the tailored cover letter for this job, if there is one.
     if (cls?.key === 'cover_letter' && TEXT_KINDS.has(field.kind)) {
@@ -165,6 +190,7 @@ export async function runAutofill(
       if (cl?.text && fillText(field.element as HTMLTextAreaElement, cl.text, field.maxLength)) {
         report.filled++;
         report.coverLetter = 'filled';
+        markFilled(field);
         highlight(field, cl.reviewed ? 'filled' : 'review');
         if (!cl.reviewed) report.needsReview.push(field.label || 'Cover letter');
       } else {
@@ -173,7 +199,8 @@ export async function runAutofill(
       continue;
     }
     const resolved = cls ? resolveValue(cls.key, ctx) : null;
-    const custom = !resolved && field.label ? matchCustomAnswer(field.label, ctx.answers) : null;
+    const fp = fieldFingerprint(site, field.element.getAttribute('name') || field.element.getAttribute('data-automation-id') || field.element.id);
+    const custom = !resolved && field.label ? matchCustomAnswer(field.label, ctx.answers, fp) : null;
 
     if (resolved || custom) {
       const value = resolved ?? { value: custom!, source: 'answer-bank' as const };
@@ -181,6 +208,7 @@ export async function runAutofill(
         report.filled++;
         if (value.source === 'answer-bank') report.fromAnswerBank++;
         highlight(field, 'filled');
+        markFilled(field);
         continue;
       }
     }
@@ -238,6 +266,7 @@ export async function applyAnswers(answers: ScreeningAnswer[]): Promise<{ applie
     }
     if (await write(field, { value, source: 'cv' })) {
       applied++;
+      markFilled(field);
       highlight(field, a.needs_review ? 'review' : 'filled');
       if (a.needs_review) review++;
     }

@@ -79,3 +79,63 @@ export function mountInPageButton(onClick: () => Promise<AutofillReport | { erro
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
+
+export interface PromptOptions {
+  title: string;
+  body: string;
+  primary: string;
+  secondary: string;
+  onPrimary: () => void | Promise<void>;
+  onSecondary?: () => void | Promise<void>;
+}
+
+/**
+ * A small confirmation card (e.g. "Save 3 new answers for next time?"),
+ * in its own closed shadow root, bottom-right, above the Autofill pill.
+ */
+export function showPrompt(opts: PromptOptions): () => void {
+  document.querySelectorAll('[data-hustlen-prompt]').forEach((el) => el.remove());
+  const host = document.createElement('div');
+  host.setAttribute('data-hustlen-ui', '');
+  host.setAttribute('data-hustlen-prompt', '');
+  const shadow = host.attachShadow({ mode: 'closed' });
+  shadow.innerHTML = `<style>
+    :host { all: initial; }
+    .card { position: fixed; right: 20px; bottom: 76px; z-index: 2147483647; width: 300px; box-sizing: border-box;
+      font: 400 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: #f9fafb; background: #111827;
+      border-radius: 12px; padding: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.28); }
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 600; font-size: 13.5px; }
+    .logo { width: 20px; height: 20px; border-radius: 6px; background: #b22a2b; display: grid; place-items: center; flex-shrink: 0; }
+    .logo svg { width: 14px; height: 14px; } .logo svg path { fill: #fff; }
+    p { margin: 0 0 12px; color: #d1d5db; }
+    .row { display: flex; gap: 8px; justify-content: flex-end; }
+    button { font: 600 12.5px/1 inherit; border-radius: 8px; padding: 8px 12px; cursor: pointer; border: 0; }
+    .primary { background: #b22a2b; color: #fff; } .primary:hover { background: #8f1f20; }
+    .secondary { background: transparent; color: #d1d5db; border: 1px solid #374151; }
+    @media (prefers-reduced-motion: no-preference) { .card { animation: in .18s ease-out; } @keyframes in { from { opacity: 0; transform: translateY(6px); } } }
+  </style>
+  <div class="card" role="dialog" aria-live="polite">
+    <div class="head"><span class="logo">${LOGO}</span><span class="title"></span></div>
+    <p class="body"></p>
+    <div class="row"><button class="secondary" type="button"></button><button class="primary" type="button"></button></div>
+  </div>`;
+  shadow.querySelector('.title')!.textContent = opts.title;
+  shadow.querySelector('.body')!.textContent = opts.body;
+  const primary = shadow.querySelector<HTMLButtonElement>('.primary')!;
+  const secondary = shadow.querySelector<HTMLButtonElement>('.secondary')!;
+  primary.textContent = opts.primary;
+  secondary.textContent = opts.secondary;
+  const close = () => host.remove();
+  primary.addEventListener('click', async () => {
+    primary.disabled = true;
+    await opts.onPrimary();
+    close();
+  });
+  secondary.addEventListener('click', async () => {
+    await opts.onSecondary?.();
+    close();
+  });
+  document.documentElement.appendChild(host);
+  setTimeout(close, 30_000);
+  return close;
+}

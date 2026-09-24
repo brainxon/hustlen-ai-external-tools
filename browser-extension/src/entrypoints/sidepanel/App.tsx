@@ -147,6 +147,9 @@ export function App() {
       if (!r) throw new Error(t('ERR_NO_FORM'));
       if ('error' in r) throw new Error(r.error);
       setReport(r);
+      if (r.resume === 'tailored') setNotice(t('RESUME_TAILORED'));
+      else if (r.resume === 'master') setNotice(t('RESUME_MASTER'));
+      else if (r.resume === 'missing') setNotice(t('RESUME_MISSING'));
       if (r.aiSkipped === 'credits') {
         setNotice(t('AI_SKIPPED_CREDITS'));
         setUpgradeNeeded(true);
@@ -242,11 +245,13 @@ export function App() {
 
   const markSubmitted = () =>
     run('submit', async () => {
+      // Offer to learn what the user typed in this form before it goes away.
+      const learned = tabId.current != null ? await call<unknown[]>({ type: 'tab:captureAnswers', tabId: tabId.current }).catch(() => []) : [];
       const appId = await save();
       if (!appId) return;
       await call({ type: 'app:markSubmitted', applicationId: appId });
       setLookup((l) => (l ? { ...l, status: 'Submitted' } : l));
-      setNotice(t('NOTICE_SUBMITTED'));
+      setNotice(Array.isArray(learned) && learned.length ? `${t('NOTICE_SUBMITTED')} · ${t('NOTICE_NEW_ANSWERS', { count: learned.length })}` : t('NOTICE_SUBMITTED'));
     });
 
   const selectCv = (key: string) =>
@@ -346,7 +351,7 @@ export function App() {
           <section class="actions">
             <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan || !!blocked}>
               <span>{busy === 'autofill' ? t('FILLING') : t('AUTOFILL')}</span>
-              <kbd>⌥⇧F</kbd>
+              <span class="row"><span class="free">{t('FREE_BADGE')}</span><kbd>⌥⇧F</kbd></span>
             </button>
             <div class="grid">
               <button class="btn" onClick={save} disabled={!!busy || !job || !!saved}>{busy === 'save' ? t('SAVING') : saved ? t('SAVED') : t('SAVE_JOB')}</button>

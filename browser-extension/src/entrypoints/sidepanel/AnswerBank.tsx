@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useT, type MessageKey } from '@/lib/i18n';
-import { answerBankStore, settingsStore, type AnswerBank, type Settings, DEFAULT_SETTINGS, EMPTY_ANSWER_BANK } from '@/lib/storage';
+import { saveToBank } from '@/lib/autofill/learn';
+import { answerBankStore, learnedStore, settingsStore, type AnswerBank, type LearnedCandidate, type Settings, DEFAULT_SETTINGS, EMPTY_ANSWER_BANK } from '@/lib/storage';
 
 /**
  * The user's own answers to recurring screening questions. Stored locally
@@ -44,11 +45,38 @@ export function AnswerBankView() {
   const [bank, setBank] = useState<AnswerBank>(EMPTY_ANSWER_BANK);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [pending, setPending] = useState<LearnedCandidate[]>([]);
 
   useEffect(() => {
     answerBankStore.getValue().then((b) => setBank({ ...EMPTY_ANSWER_BANK, ...b }));
     settingsStore.getValue().then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s }));
+    learnedStore.getValue().then(setPending);
+    const unwatchLearned = learnedStore.watch((v) => setPending(v ?? []));
+    const unwatchBank = answerBankStore.watch((b) => b && setBank({ ...EMPTY_ANSWER_BANK, ...b }));
+    return () => {
+      unwatchLearned();
+      unwatchBank();
+    };
   }, []);
+
+  const setLearning = async (on: boolean) => {
+    const next = { ...settings, learnAnswers: on };
+    setSettings(next);
+    await settingsStore.setValue(next);
+  };
+
+  const confirmPending = async (items: LearnedCandidate[]) => {
+    const current = { ...EMPTY_ANSWER_BANK, ...(await answerBankStore.getValue()) };
+    await answerBankStore.setValue(saveToBank(current, items));
+    const ids = new Set(items.map((i) => i.id));
+    await learnedStore.setValue(pending.filter((p) => !ids.has(p.id)));
+  };
+
+  const discardPending = async (id: string) => {
+    await learnedStore.setValue(pending.filter((p) => p.id !== id));
+  };
+
+  const editPending = (id: string, answer: string) => setPending((list) => list.map((p) => (p.id === id ? { ...p, answer } : p)));
 
   const update = (patch: Partial<AnswerBank>) => {
     setBank((b) => ({ ...b, ...patch }));
@@ -64,6 +92,36 @@ export function AnswerBankView() {
   return (
     <main class="stack answers">
       <p class="lead small">{t('ANSWERS_LEAD')}</p>
+
+      <section class="card learn">
+        <label class="toggle strong">
+          <input type="checkbox" checked={settings.learnAnswers === true} onChange={(e) => setLearning((e.target as HTMLInputElement).checked)} />
+          <span>{t('LEARN_TOGGLE')}</span>
+        </label>
+        <p class="fine">{t('LEARN_DISCLOSURE')}</p>
+      </section>
+
+      {pending.length > 0 && (
+        <section class="card pending">
+          <div class="row between">
+            <h3>{t('PENDING_TITLE')}</h3>
+            <button class="link" onClick={() => confirmPending(pending)}>{t('SAVE_ALL')}</button>
+          </div>
+          {pending.map((p) => (
+            <div class="custom" key={p.id}>
+              <span class="q">{p.question}</span>
+              <textarea value={p.answer} rows={p.kind === 'textarea' ? 3 : 1} onInput={(e) => editPending(p.id, (e.target as HTMLTextAreaElement).value)} />
+              <div class="row between">
+                <span class="fine">{p.host}</span>
+                <span>
+                  <button class="link danger" onClick={() => discardPending(p.id)}>{t('DISCARD')}</button>
+                  <button class="link" onClick={() => confirmPending([p])}>{t('SAVE')}</button>
+                </span>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section class="card">
         {YES_NO.map(([key, label]) => (
