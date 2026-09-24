@@ -46,6 +46,8 @@ export interface Settings {
   selectedCvSource: string | null;
   /** Extension UI language; 'auto' follows the browser. */
   uiLanguage: 'auto' | 'en' | 'de' | 'es';
+  /** Sites (domains) the user paused the extension on. */
+  pausedSites: string[];
   showInPageButton: boolean;
   useAiForOpenQuestions: boolean;
 }
@@ -72,6 +74,7 @@ export const EMPTY_ANSWER_BANK: AnswerBank = {
 export const DEFAULT_SETTINGS: Settings = {
   selectedCvSource: null,
   uiLanguage: 'auto',
+  pausedSites: [],
   showInPageButton: true,
   useAiForOpenQuestions: true,
 };

@@ -1,4 +1,5 @@
 import type { AnswerBank } from './storage';
+import type { SiteBlockReason } from './sites';
 import type { ExtensionProfile, ExtractedJob, ScreeningAnswer, ScreeningQuestion } from './types';
 
 /** Messages handled by the background script. */
@@ -17,7 +18,8 @@ export type BackgroundRequest =
   | { type: 'app:coverLetterText'; url: string }
   | { type: 'app:tailoredCv'; url: string }
   | { type: 'tab:scan'; tabId: number }
-  | { type: 'tab:autofill'; tabId: number; useAi?: boolean };
+  | { type: 'tab:autofill'; tabId: number; useAi?: boolean }
+  | { type: 'site:pause'; url: string; paused: boolean };
 
 export type BackgroundResponse<T = unknown> = { ok: true; data: T } | { ok: false; error: string; code?: string; status?: number };
 
@@ -28,6 +30,8 @@ export type ContentRequest =
   | { type: 'page:applyAnswers'; answers: ScreeningAnswer[] };
 
 export interface PageScan {
+  /** Set when the extension stays out of this site (own/local/non-job/paused). */
+  blocked?: SiteBlockReason;
   job: ExtractedJob | null;
   platform: string;
   formFieldCount: number;

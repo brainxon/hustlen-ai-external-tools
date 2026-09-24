@@ -5,6 +5,7 @@ import { applyAnswers, countFormFields, runAutofill } from '@/lib/autofill/engin
 import { extractJobDeep } from '@/lib/extract/job';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
 import { currentTranslator } from '@/lib/i18n';
+import { looksLikeJobContext, siteBlockReason } from '@/lib/sites';
 import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
 import type { ExtensionProfile, FlatCv, ScreeningAnswer } from '@/lib/types';
 import { mountInPageButton } from './button';
@@ -120,7 +121,15 @@ export default defineContentScript({
       };
     }
 
+    // Own/local/non-job/paused sites: stay silent (no button, no autofill).
+    let blocked: ReturnType<typeof siteBlockReason> = siteBlockReason(location.href);
+    void settingsStore.getValue().then((s) => (blocked = siteBlockReason(location.href, s.pausedSites ?? [])));
+
     browser.runtime.onMessage.addListener((msg: ContentRequest, _sender, sendResponse) => {
+      if (blocked) {
+        if (window === window.top) sendResponse(msg.type === 'page:scan' ? { blocked, job: null, platform: '', formFieldCount: 0, hasApplicationForm: false } : { error: 'blocked' });
+        return;
+      }
       if (msg.type === 'page:scan') {
         // Only the top frame, or an iframe that actually holds a form, answers.
         if (window !== window.top && countFormFields(adapter()) < 3) return;
@@ -141,8 +150,10 @@ export default defineContentScript({
     // In-page "Autofill" button, only where an application form is present.
     void (async () => {
       const settings = await settingsStore.getValue();
-      if (!settings.showInPageButton) return;
-      const check = () => countFormFields(adapter()) >= 3;
+      if (!settings.showInPageButton || siteBlockReason(location.href, settings.pausedSites ?? [])) return;
+      // An application form, on a page that actually looks like a job context
+      // (not a checkout, sign-up or contact form).
+      const check = () => countFormFields(adapter()) >= 3 && looksLikeJobContext(document, location.href);
       const t = await currentTranslator();
       const mount = () => mountInPageButton(() => autofill(), t);
       if (check()) {

@@ -6,6 +6,7 @@ import { storage } from 'wxt/utils/storage';
 import type { ApplicationLookup, DocumentKind, DocumentStatus, ExtensionProfile, PlanSummary } from '@/lib/types';
 import logoSvg from '@/assets/logo.svg?raw';
 import { useT, type MessageKey } from '@/lib/i18n';
+import { siteKey } from '@/lib/sites';
 import { AnswerBankView } from './AnswerBank';
 import { activeTab, call, panelApi } from './bridge';
 
@@ -51,6 +52,7 @@ export function App() {
   const [needsAccess, setNeedsAccess] = useState(false);
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [upgradeNeeded, setUpgradeNeeded] = useState(false);
+  const [pageUrl, setPageUrl] = useState<string | null>(null);
   const tabId = useRef<number | null>(null);
   const tailorAbort = useRef<AbortController | null>(null);
 
@@ -84,6 +86,7 @@ export function App() {
   const refreshPage = useCallback(async () => {
     const t = await activeTab();
     tabId.current = t?.id ?? null;
+    setPageUrl(t?.url ?? null);
     setReport(null);
     setSteps([]);
     setTailorDone(null);
@@ -96,7 +99,7 @@ export function App() {
     try {
       const s = await call<PageScan>({ type: 'tab:scan', tabId: t.id });
       setScan(s);
-      setLookup(s?.job ? await call<ApplicationLookup>({ type: 'app:lookup', url: s.job.url }).catch(() => null) : null);
+      setLookup(s?.job && !s.blocked ? await call<ApplicationLookup>({ type: 'app:lookup', url: s.job.url }).catch(() => null) : null);
     } catch (e: any) {
       setScan(null); // restricted page (store, settings, PDF viewer) or no access yet
       setLookup(null);
@@ -257,6 +260,12 @@ export function App() {
     if (granted) refreshPage();
   };
 
+  const setSitePaused = async (paused: boolean) => {
+    if (!pageUrl) return;
+    await call({ type: 'site:pause', url: pageUrl, paused });
+    refreshPage();
+  };
+
   const openInApp = (appId: number) => browser.tabs.create({ url: `${APP_BASE_URL}/home/quick-application?applicationId=${appId}` });
 
   if (connected === null) return <div class="shell center"><div class="spinner" aria-label={t('LOADING')} /></div>;
@@ -281,7 +290,9 @@ export function App() {
     );
   }
 
-  const job = scan?.job;
+  const blocked = scan?.blocked;
+  const site = pageUrl ? siteKey(pageUrl) : '';
+  const job = blocked ? null : scan?.job;
   const saved = lookup?.found ? lookup : null;
   const currentCv = profile?.cv_sources.find((s) => s.key === profile.cv?.source_key);
 
@@ -309,6 +320,14 @@ export function App() {
                 <h2 class="job-title">{job.title || t('UNTITLED_POSITION')}</h2>
                 <p class="job-meta">{[job.company, job.location].filter(Boolean).join(' · ') || t('COMPANY_NOT_DETECTED')}</p>
               </>
+            ) : blocked ? (
+              <>
+                <h2 class="job-title">{t('SITE_OFF_TITLE')}</h2>
+                <p class="job-meta">
+                  {blocked === 'own' ? t('SITE_OFF_OWN') : blocked === 'local' ? t('SITE_OFF_LOCAL') : blocked === 'paused' ? t('SITE_OFF_PAUSED', { site }) : t('SITE_OFF_NONJOB')}
+                </p>
+                {blocked === 'paused' && <button class="btn block access" onClick={() => setSitePaused(false)}>{t('RESUME_SITE', { site })}</button>}
+              </>
             ) : needsAccess ? (
               <>
                 <h2 class="job-title">{t('ALLOW_TITLE')}</h2>
@@ -325,7 +344,7 @@ export function App() {
           </section>
 
           <section class="actions">
-            <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan}>
+            <button class="btn primary big" onClick={autofill} disabled={!!busy || !scan || !!blocked}>
               <span>{busy === 'autofill' ? t('FILLING') : t('AUTOFILL')}</span>
               <kbd>⌥⇧F</kbd>
             </button>
@@ -440,6 +459,7 @@ export function App() {
 
           <footer class="foot">
             <button class="link" onClick={() => call({ type: 'profile:get', refresh: true }).then((p) => setProfile(p as ExtensionProfile))}>{t('REFRESH_PROFILE')}</button>
+            {scan && !blocked && site && <button class="link" onClick={() => setSitePaused(true)}>{t('PAUSE_SITE')}</button>}
             <button class="link" onClick={disconnect}>{t('DISCONNECT')}</button>
           </footer>
         </main>

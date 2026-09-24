@@ -140,6 +140,16 @@ const en = {
   LIMIT_REACHED: "Your plan’s limit for this action is reached.",
   AI_SKIPPED_CREDITS: "Open questions were not drafted: your plan’s AI credits are used up.",
   PREPARING: "Preparing the job…",
+  // Site blocking
+  SITE_OFF_TITLE: "hustlen.ai is off on this site",
+  SITE_OFF_OWN: "This is hustlen.ai itself – there is nothing to autofill here.",
+  SITE_OFF_LOCAL: "Local and development sites are skipped.",
+  SITE_OFF_NONJOB: "This site is not a job board, so the extension stays out of the way.",
+  SITE_OFF_PAUSED: "You paused the extension on {site}.",
+  RESUME_SITE: "Resume on {site}",
+  PAUSE_SITE: "Pause on this site",
+  PAUSED_SITES: "Paused sites",
+  PAUSED_NONE: "None",
   // In-page button
   PAGE_AUTOFILL: 'Autofill',
   PAGE_FILLING: 'Filling…',

@@ -4,6 +4,7 @@ import { ApiError, HustlenApi } from '@/lib/api';
 import { AuthError, connect, disconnect, getAccessToken, isConnected } from '@/lib/auth';
 import { PROFILE_TTL_MS } from '@/lib/config';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
+import { EXCLUDE_MATCHES, siteBlockReason, siteKey } from '@/lib/sites';
 import { profileStore, settingsStore } from '@/lib/storage';
 import type { ExtensionProfile } from '@/lib/types';
 
@@ -22,8 +23,11 @@ async function syncAllSitesScript(): Promise<void> {
   const registered = await browser.scripting.getRegisteredContentScripts({ ids: [ALL_SITES_SCRIPT_ID] }).catch(() => []);
   if (granted && !registered.length) {
     await browser.scripting
-      .registerContentScripts([{ id: ALL_SITES_SCRIPT_ID, matches: ALL_SITES, js: ['content-scripts/content.js'], allFrames: true, runAt: 'document_idle', persistAcrossSessions: true }])
+      .registerContentScripts([{ id: ALL_SITES_SCRIPT_ID, matches: ALL_SITES, excludeMatches: EXCLUDE_MATCHES, js: ['content-scripts/content.js'], allFrames: true, runAt: 'document_idle', persistAcrossSessions: true }])
       .catch(() => undefined);
+  } else if (granted && registered.length) {
+    // Older registrations had no exclusions: keep them in sync.
+    await browser.scripting.updateContentScripts([{ id: ALL_SITES_SCRIPT_ID, excludeMatches: EXCLUDE_MATCHES, js: ['content-scripts/content.js'] }]).catch(() => undefined);
   } else if (!granted && registered.length) {
     await browser.scripting.unregisterContentScripts({ ids: [ALL_SITES_SCRIPT_ID] }).catch(() => undefined);
   }
@@ -63,6 +67,13 @@ async function ensureContentScript(tabId: number): Promise<void> {
     // No activeTab grant (the panel stayed open across navigation) and no all-sites permission.
     throw new SiteAccessError('hustlen.ai needs permission to read this page');
   }
+}
+
+/** Never inject into / act on own, local, non-job or user-paused sites. */
+async function blockedTab(tabId: number) {
+  const tab = await browser.tabs.get(tabId).catch(() => null);
+  const settings = await settingsStore.getValue();
+  return siteBlockReason(tab?.url || '', settings.pausedSites ?? []);
 }
 
 async function handle(msg: BackgroundRequest): Promise<unknown> {
@@ -117,12 +128,26 @@ async function handle(msg: BackgroundRequest): Promise<unknown> {
       });
       return res.answers;
     }
-    case 'tab:scan':
+    case 'site:pause': {
+      const settings = await settingsStore.getValue();
+      const key = siteKey(msg.url);
+      const paused = new Set(settings.pausedSites ?? []);
+      if (msg.paused) paused.add(key);
+      else paused.delete(key);
+      await settingsStore.setValue({ ...settings, pausedSites: [...paused] });
+      return { site: key, paused: msg.paused };
+    }
+    case 'tab:scan': {
+      const blocked = await blockedTab(msg.tabId);
+      if (blocked) return { blocked, job: null, platform: '', formFieldCount: 0, hasApplicationForm: false } satisfies PageScan;
       await ensureContentScript(msg.tabId);
       return (await browser.tabs.sendMessage(msg.tabId, { type: 'page:scan' } satisfies ContentRequest)) as PageScan;
-    case 'tab:autofill':
+    }
+    case 'tab:autofill': {
+      if (await blockedTab(msg.tabId)) return { error: 'blocked' };
       await ensureContentScript(msg.tabId);
       return (await browser.tabs.sendMessage(msg.tabId, { type: 'page:autofill', useAi: msg.useAi } satisfies ContentRequest)) as AutofillReport;
+    }
   }
 }
 

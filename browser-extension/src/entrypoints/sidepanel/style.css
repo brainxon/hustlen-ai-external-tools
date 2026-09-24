@@ -164,3 +164,4 @@ kbd { font: 600 11px/1 ui-monospace, 'JetBrains Mono', monospace; background: rg
 .plan.exhausted .meter span { background: var(--danger); }
 .fine.warn { color: var(--warning); }
 .plan.exhausted .fine.warn { color: var(--danger); }
+.paused-site { font-weight: 500; color: var(--text); font-size: 13px; }

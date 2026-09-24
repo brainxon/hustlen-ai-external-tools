@@ -122,6 +122,23 @@ export function AnswerBankView() {
           <input type="checkbox" checked={settings.showInPageButton} onChange={(e) => setSettings({ ...settings, showInPageButton: (e.target as HTMLInputElement).checked })} />
           {t('SETTING_BUTTON')}
         </label>
+        <div class="field">
+          <span>{t('PAUSED_SITES')}</span>
+          {(settings.pausedSites ?? []).length ? (
+            (settings.pausedSites ?? []).map((site) => (
+              <div class="row between" key={site}>
+                <span class="paused-site">{site}</span>
+                <button class="link" onClick={async () => {
+                  const next = { ...settings, pausedSites: (settings.pausedSites ?? []).filter((s) => s !== site) };
+                  setSettings(next);
+                  await settingsStore.setValue(next);
+                }}>{t('RESUME_SITE', { site })}</button>
+              </div>
+            ))
+          ) : (
+            <span class="fine">{t('PAUSED_NONE')}</span>
+          )}
+        </div>
         <label class="field">
           <span>{t('SETTING_LANGUAGE')}</span>
           <select
