@@ -150,3 +150,5 @@ kbd { font: 600 11px/1 ui-monospace, 'JetBrains Mono', monospace; background: rg
 @media (prefers-reduced-motion: reduce) {
   *, *::before { animation: none !important; transition: none !important; }
 }
+
+.btn.access { margin-top: 12px; }

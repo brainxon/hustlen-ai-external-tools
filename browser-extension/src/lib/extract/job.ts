@@ -130,3 +130,71 @@ export function extractJob(doc: Document, loc: URL, adapter: PlatformAdapter): E
   }
   return null;
 }
+
+// --------------------------------------------------------------------------
+// Master-detail boards (search list + selected job): LinkedIn search, Indeed,
+// StepStone, igwork.gr, Glassdoor... The list page has no JobPosting of its
+// own, but the selected card links to a detail page that usually does.
+// --------------------------------------------------------------------------
+
+const SELECTED = '[aria-selected="true"], [aria-current="true"], [aria-current="page"], [class*="selected" i], [class*="active" i][class*="job" i], [class*="current" i][class*="job" i]';
+const NOT_A_JOB = /\/(company|companies|employer|employers|profile|login|signin|register|search|jobs\/?$)(\/|$|\?)/i;
+
+/** Same-origin link to the job detail page of the currently selected card, if any. */
+export function findSelectedJobLink(doc: Document, loc: URL): string | null {
+  const scope = doc.querySelector('main, [role="main"]') ?? doc.body;
+  for (const el of Array.from(scope?.querySelectorAll<HTMLElement>(SELECTED) ?? [])) {
+    const anchors = el.matches('a[href]') ? [el as HTMLAnchorElement] : Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href]'));
+    for (const a of anchors) {
+      let url: URL;
+      try {
+        url = new URL(a.getAttribute('href')!, loc);
+      } catch {
+        continue;
+      }
+      if (url.origin !== loc.origin || NOT_A_JOB.test(url.pathname)) continue;
+      if (url.pathname === loc.pathname && url.search === loc.search) continue;
+      url.hash = '';
+      return url.toString();
+    }
+  }
+  return null;
+}
+
+const detailCache = new Map<string, ExtractedJob | null>();
+
+/**
+ * extractJob, plus one same-origin fetch of the selected job's detail page
+ * when the current page is a search list without a readable posting.
+ */
+export async function extractJobDeep(
+  doc: Document,
+  loc: URL,
+  adapter: PlatformAdapter,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ExtractedJob | null> {
+  const direct = extractJob(doc, loc, adapter);
+  if (direct && direct.source !== 'page-text') return direct;
+
+  const link = findSelectedJobLink(doc, loc);
+  if (!link) return direct;
+  if (detailCache.has(link)) return detailCache.get(link) ?? direct;
+
+  let detail: ExtractedJob | null = null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetchImpl(link, { credentials: 'include', signal: controller.signal });
+    clearTimeout(timer);
+    if (res.ok && (res.headers.get('content-type') || 'text/html').includes('html')) {
+      const parsed = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const found = extractJob(parsed, new URL(link), adapter);
+      // A detail page is only trusted when it carries real structured or ATS data.
+      detail = found && found.source !== 'page-text' ? { ...found, url: link } : null;
+    }
+  } catch {
+    detail = null;
+  }
+  detailCache.set(link, detail);
+  return detail ?? direct;
+}

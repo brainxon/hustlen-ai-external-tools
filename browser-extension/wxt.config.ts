@@ -21,6 +21,9 @@ export default defineConfig({
     ...(process.env.WXT_MANIFEST_KEY ? { key: process.env.WXT_MANIFEST_KEY } : {}),
     permissions: ['storage', 'identity', 'activeTab', 'scripting', 'tabs', ...(browser === 'firefox' ? [] : ['sidePanel'])],
     host_permissions: [`${apiOrigin}/*`],
+    // Requested at runtime, only when the user opts in from the side panel
+    // ("Work on every job site"); until then other sites rely on activeTab.
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
     action: { default_title: 'hustlen.ai' },
     commands: {
       autofill: {

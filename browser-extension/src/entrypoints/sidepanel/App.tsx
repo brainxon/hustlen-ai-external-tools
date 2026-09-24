@@ -29,6 +29,7 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [steps, setSteps] = useState<TailorStep[]>([]);
   const [tailorDone, setTailorDone] = useState<number | null>(null);
+  const [needsAccess, setNeedsAccess] = useState(false);
   const tabId = useRef<number | null>(null);
   const tailorAbort = useRef<AbortController | null>(null);
 
@@ -53,6 +54,7 @@ export function App() {
     setReport(null);
     setSteps([]);
     setTailorDone(null);
+    setNeedsAccess(false);
     if (t?.id == null || !/^https?:/.test(t.url || '')) {
       setScan(null);
       setLookup(null);
@@ -62,9 +64,10 @@ export function App() {
       const s = await call<PageScan>({ type: 'tab:scan', tabId: t.id });
       setScan(s);
       setLookup(s?.job ? await call<ApplicationLookup>({ type: 'app:lookup', url: s.job.url }).catch(() => null) : null);
-    } catch {
-      setScan(null); // restricted page (store, settings, PDF viewer)
+    } catch (e: any) {
+      setScan(null); // restricted page (store, settings, PDF viewer) or no access yet
       setLookup(null);
+      setNeedsAccess(e?.code === 'no_site_access');
     }
   }, []);
 
@@ -164,6 +167,12 @@ export function App() {
       setProfile(await call<ExtensionProfile>({ type: 'profile:selectCv', cvSource: key }));
     });
 
+  // Must run in the panel itself: permissions.request needs the click's user gesture.
+  const grantAllSites = async () => {
+    const granted = await browser.permissions.request({ origins: ['https://*/*', 'http://*/*'] }).catch(() => false);
+    if (granted) refreshPage();
+  };
+
   const openInApp = (appId: number) => browser.tabs.create({ url: `${APP_BASE_URL}/home/quick-application?applicationId=${appId}` });
 
   if (connected === null) return <div class="shell center"><div class="spinner" aria-label="Loading" /></div>;
@@ -215,6 +224,13 @@ export function App() {
                 </div>
                 <h2 class="job-title">{job.title || 'Untitled position'}</h2>
                 <p class="job-meta">{[job.company, job.location].filter(Boolean).join(' · ') || 'Company not detected'}</p>
+              </>
+            ) : needsAccess ? (
+              <>
+                <h2 class="job-title">Allow hustlen.ai on this page</h2>
+                <p class="job-meta">To detect jobs and autofill on any job site, not only the major ATS, the extension needs to read the page you are on.</p>
+                <button class="btn primary block access" onClick={grantAllSites}>Work on every job site</button>
+                <p class="fine">Or click the hustlen.ai toolbar icon to allow just this tab.</p>
               </>
             ) : (
               <>

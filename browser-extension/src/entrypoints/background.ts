@@ -9,6 +9,26 @@ import type { ExtensionProfile } from '@/lib/types';
 
 const api = new HustlenApi((force) => getAccessToken(force));
 
+const ALL_SITES = ['https://*/*', 'http://*/*'];
+const ALL_SITES_SCRIPT_ID = 'hustlen-all-sites';
+
+class SiteAccessError extends Error {
+  code = 'no_site_access';
+}
+
+/** Mirrors the optional all-sites permission into a registered content script (in-page button everywhere). */
+async function syncAllSitesScript(): Promise<void> {
+  const granted = await browser.permissions.contains({ origins: ALL_SITES }).catch(() => false);
+  const registered = await browser.scripting.getRegisteredContentScripts({ ids: [ALL_SITES_SCRIPT_ID] }).catch(() => []);
+  if (granted && !registered.length) {
+    await browser.scripting
+      .registerContentScripts([{ id: ALL_SITES_SCRIPT_ID, matches: ALL_SITES, js: ['content-scripts/content.js'], allFrames: true, runAt: 'document_idle', persistAcrossSessions: true }])
+      .catch(() => undefined);
+  } else if (!granted && registered.length) {
+    await browser.scripting.unregisterContentScripts({ ids: [ALL_SITES_SCRIPT_ID] }).catch(() => undefined);
+  }
+}
+
 async function getProfile(refresh = false): Promise<ExtensionProfile> {
   const cached = await profileStore.getValue();
   if (!refresh && cached && Date.now() - cached.fetchedAt < PROFILE_TTL_MS) return cached.profile;
@@ -35,9 +55,14 @@ async function ensureContentScript(tabId: number): Promise<void> {
   } catch {
     /* not injected yet */
   }
-  await browser.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['/content-scripts/content.js'] }).catch(() =>
-    browser.scripting.executeScript({ target: { tabId }, files: ['/content-scripts/content.js'] }),
-  );
+  try {
+    await browser.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['/content-scripts/content.js'] }).catch(() =>
+      browser.scripting.executeScript({ target: { tabId }, files: ['/content-scripts/content.js'] }),
+    );
+  } catch {
+    // No activeTab grant (the panel stayed open across navigation) and no all-sites permission.
+    throw new SiteAccessError('hustlen.ai needs permission to read this page');
+  }
 }
 
 async function handle(msg: BackgroundRequest): Promise<unknown> {
@@ -109,7 +134,7 @@ export default defineBackground(() => {
         sendResponse({
           ok: false,
           error: err.message || 'Something went wrong',
-          code: err instanceof ApiError ? err.code : undefined,
+          code: (err as { code?: string }).code,
           status: err instanceof ApiError ? err.status : undefined,
         } satisfies BackgroundResponse);
       });
@@ -123,6 +148,10 @@ export default defineBackground(() => {
     if (tab?.id == null) return;
     await handle({ type: 'tab:autofill', tabId: tab.id }).catch(() => undefined);
   });
+
+  void syncAllSitesScript();
+  browser.permissions.onAdded.addListener(() => void syncAllSitesScript());
+  browser.permissions.onRemoved.addListener(() => void syncAllSitesScript());
 
   browser.runtime.onStartup.addListener(async () => {
     if (await isConnected()) getProfile(true).catch(() => undefined);

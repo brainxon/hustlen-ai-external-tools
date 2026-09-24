@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { ADAPTERS, adapterFor, KNOWN_ATS_MATCHES } from '@/lib/autofill/adapters';
 import { applyAnswers, countFormFields, runAutofill } from '@/lib/autofill/engine';
-import { extractJob } from '@/lib/extract/job';
+import { extractJobDeep } from '@/lib/extract/job';
 import type { AutofillReport, BackgroundRequest, BackgroundResponse, ContentRequest, PageScan } from '@/lib/messages';
 import { answerBankStore, profileStore, settingsStore } from '@/lib/storage';
 import type { ExtensionProfile, ScreeningAnswer } from '@/lib/types';
@@ -47,7 +47,7 @@ export default defineContentScript({
 
         const wantAi = useAi ?? settings.useAiForOpenQuestions;
         if (wantAi && report.unanswered.length) {
-          const job = extractJob(document, new URL(location.href), a);
+          const job = await extractJobDeep(document, new URL(location.href), a);
           const res = await send<ScreeningAnswer[]>({ type: 'ai:answer', questions: report.unanswered.slice(0, 25), job: job ?? undefined });
           if (res.ok) {
             const { applied, review } = await applyAnswers(res.data);
@@ -85,11 +85,11 @@ export default defineContentScript({
       sticky.observe(document.body, { childList: true, subtree: true });
     }
 
-    function scan(): PageScan {
+    async function scan(): Promise<PageScan> {
       const a = adapter();
       const count = countFormFields(a);
       return {
-        job: extractJob(document, new URL(location.href), a),
+        job: await extractJobDeep(document, new URL(location.href), a),
         platform: a.name,
         formFieldCount: count,
         hasApplicationForm: count >= 3,
@@ -98,10 +98,10 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((msg: ContentRequest, _sender, sendResponse) => {
       if (msg.type === 'page:scan') {
-        const result = scan();
-        // Only the frame that actually has something answers (iframes without forms stay quiet).
-        if (window === window.top || result.hasApplicationForm || result.job) sendResponse(result);
-        return;
+        // Only the top frame, or an iframe that actually holds a form, answers.
+        if (window !== window.top && countFormFields(adapter()) < 3) return;
+        scan().then(sendResponse);
+        return true;
       }
       if (msg.type === 'page:autofill') {
         if (window !== window.top && countFormFields(adapter()) < 2) return;
