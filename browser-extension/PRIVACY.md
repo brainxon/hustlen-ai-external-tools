@@ -1,6 +1,6 @@
 # hustlen.ai Browser Extension – Privacy Policy
 
-_Last updated: 2026-09-24_
+_Last updated: 2026-09-29. Published as section 9 of https://hustlen.ai/privacy-policy._
 
 The hustlen.ai browser extension ("the extension") helps you apply to jobs. It autofills job application forms from your hustlen.ai profile and your saved answers, saves the jobs you apply to in your hustlen.ai account, and lets you tailor your CV and cover letter.
 
@@ -30,8 +30,8 @@ The use of information received from the extension complies with the [Chrome Web
 - **Disconnect** from the extension, or from the hustlen.ai dashboard (*Browser extension → Disconnect*).
 - **Turn off answer learning and AI drafting**, and delete saved answers, in *My answers*.
 - **Remove the extension** from your browser. This deletes all locally stored data.
-- To delete your hustlen.ai account data, contact privacy@hustlen.ai. Your hustlen.ai account is also governed by the hustlen.ai privacy policy at https://hustlen.ai/privacy.
+- To delete your hustlen.ai account data, contact support@hustlen.ai. Your hustlen.ai account is also governed by the hustlen.ai privacy policy at https://hustlen.ai/privacy-policy.
 
 ## Contact
 
-privacy@hustlen.ai
+support@hustlen.ai

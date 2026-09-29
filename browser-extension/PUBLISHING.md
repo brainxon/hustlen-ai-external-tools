@@ -7,8 +7,8 @@ Status as of 2026-09-24 covers the Chrome Web Store (CWS), Microsoft Edge Add-on
 | # | Task | Owner |
 |---|---|---|
 | 1 | **Register a CWS developer account.** US$5 one-time fee. Use a company Google account with 2-Step Verification, not a personal one. Declare **Trader** status under the EU Digital Services Act; the company address, phone and email are then shown publicly. | Company |
-| 2 | **Publish the privacy policy** at `https://hustlen.ai/privacy/extension`. `PRIVACY.md` is ready to paste into the landing site. | Landing |
-| 3 | **Create a support email or page**, for example `support@hustlen.ai`. | Company |
+| 2 | **Privacy policy.** Section 9, "hustlen.ai Browser Extension", of `https://hustlen.ai/privacy-policy` (de/en/es/pt, brainxon/hustlen-ai-landing#1) covers the extension and the Limited Use statement. `PRIVACY.md` is the source text; keep both in sync. | Landing |
+| 3 | **Support contact:** `support@hustlen.ai`. | Company |
 | 4 | **Pin the extension ID for OAuth.** Upload a first zip to CWS as a draft **without publishing**. Go to *Package → View public key* and copy the key. Put it in `.env` as `WXT_MANIFEST_KEY=` for dev builds only, so local builds get the same ID as the store. | Dev |
 | 5 | **Register the backend OAuth redirect URIs** in production `.env`: `EXTENSION_OAUTH_REDIRECT_URIS=https://<cws-id>.chromiumapp.org/,https://<edge-id>.chromiumapp.org/,https://<firefox-uuid>.extensions.allizom.org/`. Edge assigns its **own** ID; add it after the first Edge upload. | Backend |
 | 6 | **Set `extensionStoreUrl`** in `chamba-ai` `environment.prod.ts`. This turns on the dashboard card's "Add to Chrome" button. | Frontend |
@@ -95,7 +95,7 @@ The first upload is manual. The API can't create a new item.
 
 Certify all three: not sold; not used for unrelated purposes; not used for creditworthiness or lending.
 
-**Privacy policy URL:** `https://hustlen.ai/privacy/extension`.
+**Privacy policy URL:** `https://hustlen.ai/privacy-policy?lang=en`. Section 9 covers the extension; use `?lang=de` / `?lang=es` for those listings.
 
 **In-product disclosure:** already built. The "Remember answers I type" toggle and the first-submit opt-in prompt give a prominent disclosure and require the user to act, as the User Data policy requires.
 
