@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "hustlen.ai – Autocompletar postulaciones"
+  },
+  "extDescription": {
+    "message": "Autocompleta y registra tus postulaciones con tu CV maestro de hustlen.ai."
+  },
+  "cmdAutofill": {
+    "message": "Autocompletar el formulario de postulación de esta página"
+  }
+}
