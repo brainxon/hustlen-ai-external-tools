@@ -9,8 +9,8 @@ Status as of 2026-09-24 covers the Chrome Web Store (CWS), Microsoft Edge Add-on
 | 1 | **Register a CWS developer account.** US$5 one-time fee. Use a company Google account with 2-Step Verification, not a personal one. Declare **Trader** status under the EU Digital Services Act; the company address, phone and email are then shown publicly. | Company |
 | 2 | **Privacy policy.** Section 9, "hustlen.ai Browser Extension", of `https://hustlen.ai/privacy-policy` (de/en/es/pt, brainxon/hustlen-ai-landing#1) covers the extension and the Limited Use statement. `PRIVACY.md` is the source text; keep both in sync. | Landing |
 | 3 | **Support contact:** `support@hustlen.ai`. | Company |
-| 4 | **Pin the extension ID for OAuth.** Upload a first zip to CWS as a draft **without publishing**. Go to *Package → View public key* and copy the key. Put it in `.env` as `WXT_MANIFEST_KEY=` for dev builds only, so local builds get the same ID as the store. | Dev |
-| 5 | **Register the backend OAuth redirect URIs** in production `.env`: `EXTENSION_OAUTH_REDIRECT_URIS=https://<cws-id>.chromiumapp.org/,https://<edge-id>.chromiumapp.org/,https://<firefox-uuid>.extensions.allizom.org/`. Edge assigns its **own** ID; add it after the first Edge upload. | Backend |
+| 4 | **Get the store IDs for OAuth.** Upload a first `zip:store` package to CWS as a draft **without publishing**, and note the item ID. If sideloaded production builds should share the store ID, go to *Package → View public key* and put that key in `.env.production` as `WXT_MANIFEST_KEY`. Otherwise keep the test key; see [ENVIRONMENTS.md](ENVIRONMENTS.md). | Dev |
+| 5 | **Register the backend OAuth redirect URIs** in the production backend env. Append them to the test ID from [ENVIRONMENTS.md](ENVIRONMENTS.md): `EXTENSION_OAUTH_REDIRECT_URIS=https://cengnipjmfhjcdchinmldhpkibpahcki.chromiumapp.org/,https://<cws-id>.chromiumapp.org/,https://<edge-id>.chromiumapp.org/,https://<firefox-uuid>.extensions.allizom.org/`. Edge assigns its **own** ID; add it after the first Edge upload. | Backend |
 | 6 | **Set `extensionStoreUrl`** in `chamba-ai` `environment.prod.ts`. This turns on the dashboard card's "Add to Chrome" button. | Frontend |
 | 7 | **Microsoft Partner Center** account for Edge. Free. | Company |
 | 8 | **Firefox AMO** developer account. Free. | Company |
@@ -19,18 +19,14 @@ Status as of 2026-09-24 covers the Chrome Web Store (CWS), Microsoft Edge Add-on
 
 ```bash
 cd browser-extension
-cat > .env.production <<'ENV'
-WXT_API_BASE_URL=https://app.hustlen.ai/server/api
-WXT_APP_BASE_URL=https://app.hustlen.ai
-WXT_OAUTH_CLIENT_ID=hustlen-extension
-ENV
+# .env.production is committed (app.hustlen.ai hosts); see ENVIRONMENTS.md.
 npm ci && npm test && npm run compile
 # Bump "version" in package.json first; every store rejects a version it has already seen.
-npm run zip:all        # .output/*-chrome.zip, *-edge.zip, *-firefox.zip, *-sources.zip
+npm run zip:store      # .output/*-chrome.zip, *-edge.zip, *-firefox.zip, *-sources.zip
 ```
 
-- **No `key` in store builds.** Leave `WXT_MANIFEST_KEY` out of `.env.production`; the store supplies the key.
-- **Env files stay out of packages.** `.env*` files are excluded from the Firefox sources zip (`zip.excludeSources`).
+- **No `key` in store builds.** `zip:store` sets `WXT_STORE_BUILD=1`, which drops `WXT_MANIFEST_KEY`; the store supplies the ID. The `*-sideload.zip` files from `zip:prod` / `zip:stg` are for testers only. Never upload them.
+- **Env files in packages.** The Firefox sources zip includes `.env.production`, so the reviewer can rebuild the package. It never includes `.env`, `.env.local`, `.env.*.local`, `.env.submit`, `.env.staging` or `.keys/`.
 
 ## 2. Chrome Web Store listing
 
@@ -111,7 +107,7 @@ Certify all three: not sold; not used for unrelated purposes; not used for credi
 - **Edge Add-ons:** upload `*-edge.zip` in Partner Center. The privacy fields mirror CWS. Assets: a 300×300 logo and screenshots at 1280×800. Certification takes up to 7 business days. **The Edge ID is different**, so add its redirect URI to the backend.
 - **Firefox AMO:**
   - Upload `*-firefox.zip` **and** `*-sources.zip`. A sources zip is required because the code is bundled and minified.
-  - The reviewer builds it with `npm ci && npm run build:firefox`, per this README; Node 22+ works.
+  - The reviewer builds it with `npm ci && npm run build:firefox:store` (Node 22+).
   - The `data_collection_permissions` field is already declared, as required for new add-ons since 2025-11-03.
   - Test the resume auto-attach on Firefox: `File`/`DataTransfer` crossing content-script contexts can behave differently there.
 
@@ -119,19 +115,19 @@ Certify all three: not sold; not used for unrelated purposes; not used for credi
 
 ```bash
 npm run submit:init      # interactive: stores the CWS v2 service account, Edge API key and AMO JWT in .env.submit
-npm run zip:all
+npm run zip:store
 npm run submit -- --dry-run   # check auth
 npm run submit -- --chrome-publish-type STAGED_PUBLISH
 ```
 
 - **Use the CWS API v2.** The script already passes `--chrome-api-version v2`. **The v1 API stops working on 2026-10-15.**
 - Keep `.env.submit` out of git. `.gitignore` already covers `.env.*`.
-- Recommended: a CI job, for example a GitHub Action on version tags, that runs `npm test`, `npm run zip:all` and `npm run submit`, with the secrets stored in the CI.
+- Recommended: a CI job, for example a GitHub Action on version tags, that runs `npm test`, `npm run zip:store` and `npm run submit`, with the secrets stored in the CI.
 
 ## 7. Pre-submission checklist
 
 - [ ] `npm test` and `npm run compile` pass; version bumped.
-- [ ] Production `.env.production`; no `WXT_MANIFEST_KEY` in the store build.
+- [ ] Store packages built with `npm run zip:store`, so they have no `key` in the manifest.
 - [ ] Backend deployed with `EXTENSION_OAUTH_CLIENT_ID` and a redirect URI for every store ID.
 - [ ] Privacy policy live; support contact set.
 - [ ] Screenshots and promo tile at 1280×800 and 440×280.

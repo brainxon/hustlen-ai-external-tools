@@ -36,27 +36,22 @@ npm run dev                 # Chrome with the extension loaded + HMR
 npm run dev:firefox
 npm test                    # vitest (jsdom)
 npm run compile             # tsc --noEmit
-npm run build               # .output/chrome-mv3
+npm run build:stg           # staging -> .output/chrome-mv3-staging ("hustlen.ai STG")
+npm run build:prod          # production -> .output/chrome-mv3
 npm run build:edge          # .output/edge-mv3
 npm run build:firefox       # .output/firefox-mv3
-npm run zip                 # store-ready zip
+npm run zip:stg             # staging zips to sideload (Chrome, Edge)
+npm run zip:prod            # production zips to sideload (Chrome, Edge)
+npm run zip:store           # store packages, no manifest key
 ```
 
-`WXT_API_BASE_URL` controls `host_permissions`. For a production build, create `.env.production` with:
-
-```
-WXT_API_BASE_URL=https://app.hustlen.ai/server/api
-WXT_APP_BASE_URL=https://app.hustlen.ai
-WXT_OAUTH_CLIENT_ID=hustlen-extension
-```
+**Environments.** Local builds read `.env` (copied from `.env.example`). Staging reads `.env.staging` and production reads `.env.production`; both are committed. Each environment has its own extension ID, OAuth redirect URI and backend allow-list. The server steps are in **[ENVIRONMENTS.md](ENVIRONMENTS.md)**.
 
 ### OAuth redirect URI (backend allow-list)
 
-The backend only accepts redirect URIs listed in `EXTENSION_OAUTH_REDIRECT_URIS`. The extension's URI is `https://<extension-id>.chromiumapp.org/` on Chrome and Edge, and `https://<uuid>.extensions.allizom.org/` on Firefox.
+The backend only accepts redirect URIs listed in `EXTENSION_OAUTH_REDIRECT_URIS`. The extension's URI is `https://<extension-id>.chromiumapp.org/` on Chrome and Edge, and `https://<uuid>.extensions.allizom.org/` on Firefox. `WXT_MANIFEST_KEY` (a base64 public key) pins the ID. For staging and production, the IDs and URIs are listed in [ENVIRONMENTS.md](ENVIRONMENTS.md).
 
-1. Load the unpacked build, or get the store ID, and copy the extension ID.
-2. For a stable ID in dev, set `WXT_MANIFEST_KEY` to a base64 public key.
-3. Add the URI to the backend `.env`:
+For local development, add your own ID to the local backend `.env`:
 
 ```
 EXTENSION_OAUTH_CLIENT_ID=hustlen-extension
