@@ -70,6 +70,8 @@ export function App() {
         setUpgradeNeeded(true);
         setError(t('LIMIT_REACHED'));
         refreshPlan();
+      } else if (e?.code === 'unreachable') {
+        setError(t('ERR_UNREACHABLE'));
       } else {
         setError(e?.message || t('GENERIC_ERROR'));
       }

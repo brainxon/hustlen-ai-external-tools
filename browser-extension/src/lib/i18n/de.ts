@@ -48,6 +48,7 @@ const de: Messages = {
   ERR_NO_FORM: 'Auf dieser Seite wurde kein Bewerbungsformular gefunden',
   ERR_NO_FORM_YET: 'Noch kein Bewerbungsformular auf dieser Seite. Öffne das Formular (z. B. „Bewerben“ klicken) und versuche es erneut.',
   ERR_NOT_CONNECTED: 'Verbinde die Erweiterung zuerst mit hustlen.ai',
+  ERR_UNREACHABLE: 'hustlen.ai ist gerade nicht erreichbar. Du bist weiterhin verbunden - versuche es gleich noch einmal.',
   ERR_AUTOFILL_RUNNING: 'Das Ausfüllen läuft bereits',
   COVER_LETTER_MISSING: 'Dieses Formular hat ein Feld für das Anschreiben. Passe diese Stelle an, um es automatisch auszufüllen.',
   ERR_NO_JOB: 'Auf dieser Seite konnte keine Stellenanzeige gelesen werden',

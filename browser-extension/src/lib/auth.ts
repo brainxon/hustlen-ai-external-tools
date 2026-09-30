@@ -17,7 +17,18 @@ interface TokenResponse {
   expires_in: number;
 }
 
-export class AuthError extends Error {}
+/**
+ * `code` tells a definitive rejection (invalid_grant & co.: the session is
+ * gone) from `unreachable` (network down, 5xx, backend restarting during a
+ * deploy): only the former may end the session.
+ */
+export class AuthError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+  }
+}
+
+const UNREACHABLE = 'unreachable';
 
 export function redirectUri(): string {
   return browser.identity.getRedirectURL();
@@ -37,14 +48,25 @@ export function buildAuthorizeUrl(params: { challenge: string; state: string; re
 }
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch(`${API_BASE_URL}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: OAUTH_CLIENT_ID, ...body }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: OAUTH_CLIENT_ID, ...body }),
+    });
+  } catch {
+    throw new AuthError('Could not reach hustlen.ai', UNREACHABLE);
+  }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
-    throw new AuthError(detail.error_description || detail.error || `Token request failed (${res.status})`);
+    // OAuth errors (RFC 6749 §5.2) come back as 400/401; anything else
+    // (5xx, 429, a proxy error page) says nothing about the token itself.
+    const definitive = res.status === 400 || res.status === 401;
+    throw new AuthError(
+      detail.error_description || detail.error || `Token request failed (${res.status})`,
+      definitive ? detail.error || 'invalid_grant' : UNREACHABLE,
+    );
   }
   return res.json();
 }
@@ -85,7 +107,11 @@ async function refresh(): Promise<string | null> {
       if (!refreshToken) return null;
       try {
         return await saveTokens(await tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken }));
-      } catch {
+      } catch (e) {
+        // A transient failure keeps the session: the refresh token is still
+        // valid, the next call simply retries (#5). Only a rejected token
+        // disconnects the extension.
+        if (e instanceof AuthError && e.code === UNREACHABLE) throw e;
         await clearSession();
         return null;
       }
