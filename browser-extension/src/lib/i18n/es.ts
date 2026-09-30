@@ -48,6 +48,7 @@ const es: Messages = {
   ERR_NO_FORM: 'No se encontró un formulario de postulación en esta página',
   ERR_NO_FORM_YET: 'Todavía no hay un formulario de postulación en esta página. Ábrelo (por ejemplo, pulsa "Apply") e inténtalo de nuevo.',
   ERR_NOT_CONNECTED: 'Primero conecta la extensión con hustlen.ai',
+  ERR_UNREACHABLE: 'No se pudo conectar con hustlen.ai. Sigues conectado: inténtalo de nuevo en un momento.',
   ERR_AUTOFILL_RUNNING: 'El autocompletado ya está en curso',
   COVER_LETTER_MISSING: 'Este formulario tiene un campo de carta de presentación. Adapta este empleo para completarlo automáticamente.',
   ERR_NO_JOB: 'No se pudo leer una oferta de empleo en esta página',

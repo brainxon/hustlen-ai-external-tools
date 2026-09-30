@@ -52,6 +52,7 @@ const en = {
   ERR_NO_FORM: 'No application form found on this page',
   ERR_NO_FORM_YET: 'No application form on this page yet. Open the form (e.g. click "Apply") and try again.',
   ERR_NOT_CONNECTED: 'Connect the extension to hustlen.ai first',
+  ERR_UNREACHABLE: 'Could not reach hustlen.ai. You are still connected - try again in a moment.',
   ERR_AUTOFILL_RUNNING: 'Autofill already running',
   COVER_LETTER_MISSING: 'This form has a cover letter field. Tailor this job to fill it automatically.',
   ERR_NO_JOB: 'Could not read a job posting on this page',
